@@ -2345,8 +2345,11 @@ static IHeapAllocator *GetG2VertSpaceServer( void ) {
 	return G2VertSpaceServer;
 }
 
+#ifdef __ANDROID__
+#define DEFAULT_RENDER_LIBRARY "rd-gles"
+#else
 #define DEFAULT_RENDER_LIBRARY "rd-vanilla"
-
+#endif
 void CL_InitRef( void ) {
 	static refimport_t ri;
 	refexport_t	*ret;

@@ -3382,6 +3382,15 @@ void FS_Startup( const char *gameName ) {
 	}
 #endif
 
+	LOGI("fs_homepath->string = %d",fs_homepath->string);
+	LOGI("fs_basepath->string = %d",fs_basepath->string);
+
+	if (fs_homepath->string)
+		LOGI("fs_homepath->string == %s",fs_homepath->string);
+	if (fs_basepath->string)
+		LOGI("fs_basepath->string == %s",fs_basepath->string);
+
+
 	// fs_homepath is somewhat particular to *nix systems, only add if relevant
 	// NOTE: same filtering below for mods and basegame
 	if (fs_homepath->string[0] && !Sys_PathCmp(fs_homepath->string, fs_basepath->string)) {

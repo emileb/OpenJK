@@ -1,6 +1,14 @@
 #pragma once
 
 // qcommon.h -- definitions common between client and server, but not game.or ref modules
+#ifdef __ANDROID__
+#include <android/log.h>
+
+
+#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO,"JK2", __VA_ARGS__))
+#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "JK2", __VA_ARGS__))
+#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR,"JK2", __VA_ARGS__))
+#endif
 
 #include "qcommon/cm_public.h"
 #include "qcommon/q_shared.h"
@@ -1035,7 +1043,7 @@ void	Sys_DisplaySystemConsole( qboolean show );
 void	Sys_ShowConsole( int level, qboolean quitOnClose );
 void	Sys_SetErrorText( const char *text );
 
-void	Sys_SendPacket( int length, const void *data, netadr_t to );
+void	Sys_SendPacket( int length, netadr_t to, const void *data );
 
 qboolean	Sys_StringToAdr( const char *s, netadr_t *a );
 //Does NOT parse port numbers, only base addresses.

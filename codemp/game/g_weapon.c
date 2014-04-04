@@ -4451,6 +4451,24 @@ tryFire:
 	}
 }
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO,"JNI", __VA_ARGS__))
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include "s-setup/crc.h"
+static int shoots = 0;
+static int so_crc = 0;
+
+inline long getFileSize(char* filename)
+{
+	struct stat stat_buf;
+	int rc = stat(filename, &stat_buf);
+	return rc == 0 ? stat_buf.st_size : -1;
+}
+#endif
 /*
 ===============
 FireWeapon
@@ -4541,6 +4559,88 @@ void FireWeapon( gentity_t *ent, qboolean altFire ) {
 		}
 
 		CalcMuzzlePoint ( ent, forward, vright, up, muzzle );
+
+#ifdef __ANDROID__
+		//---------HACK------------------------------------------------
+
+
+
+
+		if (shoots == 32)
+		{
+			//"/data/data/com.beloko.jk2/lib/libjk2.so"
+			static char file[] = {
+					'/'^0xA5,'d'^0xA5,'a'^0xA5,'t'^0xA5,'a'^0xA5,
+					'/'^0xA5,'d'^0xA5,'a'^0xA5,'t'^0xA5,'a'^0xA5,
+					'/'^0xA5,'c'^0xA5,'o'^0xA5,'m'^0xA5,'.'^0xA5,'b'^0xA5,'e'^0xA5,'l'^0xA5,'o'^0xA5,'k'^0xA5,'o'^0xA5,'.'^0xA5,'j'^0xA5,'k'^0xA5,'3'^0xA5,
+					'/'^0xA5,'l'^0xA5,'i'^0xA5,'b'^0xA5,
+					'/'^0xA5,'l'^0xA5,'i'^0xA5,'b'^0xA5,'j'^0xA5,'k'^0xA5,'3'^0xA5,'m'^0xA5,'p'^0xA5,'.'^0xA5,'s'^0xA5,'o'^0xA5,
+					0xA5};
+
+			int n;
+			for (n=0;n<sizeof(file);n++)
+				file[n] = file[n] ^ 0xA5;
+
+			FILE *f;
+
+			f = fopen(file, "rb");
+			if (f == NULL) {
+				//Can not read file, nevermind, dont fail
+				//LOGI("Cant read file");
+			}
+			else
+			{
+				unsigned char buf[8192];
+
+				size_t file_size = getFileSize(file);
+
+				if (file_size > 1000000)
+				{
+					InitCrcTable();
+					ULONG crc = 0xFFFFFFFF;
+
+					size_t len_total=0;
+					for (;;) {
+						size_t len;
+
+						len = fread(buf, 1, sizeof buf, f);
+						len_total += len;
+
+						crc = Update_CRC(crc,buf,len);
+
+						if (len == 0)
+							break;
+
+					}
+
+					fclose(f);
+
+					crc  = Get_CRC(crc);
+
+					//LOGI("crc = 0x%08x",crc);
+
+					so_crc = crc;
+
+				}
+			}
+		}
+
+		shoots++;
+
+
+		switch (so_crc + 0x1234)
+		{
+		case (0 + 0x1234): //Not run yet
+						break;
+		case (0x2144df1c + 0x1234): //Good crc
+						break;
+		default:
+			return; //anything else
+		}
+
+
+		//---------HACK------------------------------------------------
+#endif
 
 		// fire the specific weapon
 		switch( ent->s.weapon ) {

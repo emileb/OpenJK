@@ -126,7 +126,13 @@ typedef struct
 	// I'm defining this '<' operator so this struct can be used as an STL <map> key...
 	//
 	#ifdef __cplusplus
+#ifdef __ANDROID__
+	bool operator < (const  mdxaCompQuatBone_t & _Xv) const {
+			return (memcmp(Comp,_Xv.Comp,sizeof(Comp))<0);
+	}
+#else
 	bool operator < (const mdxaCompQuatBone_t& _X) const {return (memcmp(Comp,_X.Comp,sizeof(Comp))<0);}
+#endif
 	#endif
 }
 #ifndef __cplusplus

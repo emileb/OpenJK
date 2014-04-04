@@ -101,6 +101,12 @@ qboolean SFxHelper::GetOriginAxisFromBolt(CGhoul2Info_v *pGhoul2, int mEntNum, i
 	CGVM_GetLerpData();//this func will zero out pitch and roll for players, and ridable vehicles
 
 	//Fixme: optimize these VM calls away by storing
+#ifdef __ANDROID__
+	//WTF IS THIS, Crashes otherwise, FIX ME!
+	LOGI("GetOriginAxisFromBolt %x",pGhoul2);
+	if (!pGhoul2)
+		return qfalse;
+#endif
 
 	// go away and get me the bolt position for this frame please
 	doesBoltExist = re->G2API_GetBoltMatrix(*pGhoul2, modelNum, boltNum,

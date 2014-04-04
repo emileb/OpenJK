@@ -67,7 +67,11 @@ struct MusicExitTime_t	// need to declare this way for operator < below
 
 	// I'm defining this '<' operator so STL's sort algorithm will work
 	//
+#ifdef __ANDROID__
+	bool operator < (const MusicExitTime_t& _Xv) const {return (fTime < _Xv.fTime);}
+#else
 	bool operator < (const MusicExitTime_t& _X) const {return (fTime < _X.fTime);}
+#endif
 };
 
 // it's possible for all 3 of these to be empty if it's boss or death music

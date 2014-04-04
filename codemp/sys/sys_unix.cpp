@@ -501,6 +501,27 @@ char *Sys_Cwd( void )
 /* Returns true if resulting paths are valid and the same, otherwise false */
 bool Sys_PathCmp( const char *path1, const char *path2 )
 {
+#ifdef __ANDROID__
+	if (!path1 || ! path2)
+		return false;
+	LOGI("Sys_PathCmp p1 = %s, p2 = %s",path1,path2);
+
+	char r1[PATH_MAX], r2[PATH_MAX];
+
+	 realpath(path1, r1);
+	 realpath(path2, r2);
+
+	if(r1 && r2 && !Q_stricmp(r1, r2))
+	{
+
+		return true;
+	}
+
+
+	return false;
+#else
+
+
 	char *r1, *r2;
 
 	r1 = realpath(path1, NULL);
@@ -516,6 +537,7 @@ bool Sys_PathCmp( const char *path1, const char *path2 )
 	free(r1);
 	free(r2);
 	return false;
+#endif
 }
 
 void Sys_ShowConsole( int visLevel, qboolean quitOnClose )
@@ -555,8 +577,20 @@ char *Sys_DefaultHomePath(void)
 	return homePath;
 }
 #else
+#ifdef __ANDROID__
+extern "C"
+{
+	extern const char * getGamePath();
+}
+#endif
 char *Sys_DefaultHomePath(void)
 {
+#ifdef __ANDROID__
+
+	Com_sprintf(homePath, sizeof(homePath), "%s", getGamePath());
+	return homePath;
+#endif
+
 	char *p;
 
 	if( !*homePath && com_homepath != NULL )

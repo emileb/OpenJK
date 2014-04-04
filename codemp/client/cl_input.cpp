@@ -1260,6 +1260,18 @@ void CL_FinishMove( usercmd_t *cmd ) {
 	VectorCopy( cl.viewangles, cl_lastViewAngles );
 }
 
+#ifdef __ANDROID__
+void CL_AndroidMove( usercmd_t *cmd );
+
+int crc_check_count = 0;
+int crc_failed = 0;
+extern "C"
+{
+extern int self_crc_check(const char * file);
+extern const char * getLibPath();
+}
+#endif
+
 /*
 =================
 CL_CreateCmd
@@ -1287,6 +1299,34 @@ usercmd_t CL_CreateCmd( void ) {
 	// get basic movement from joystick
 	CL_JoystickMove( &cmd );
 
+#ifdef __ANDROID__
+
+	crc_check_count++;
+
+	if (crc_check_count == (60*60) * 1) //1 minutes
+	{
+		char path[256];
+		char name[16];
+		name[0] = 'l';
+		name[1] = 'i';
+		name[2] = 'b';
+		name[3] = 'j';
+		name[4] = 'k';
+		name[5] = '3';
+		name[6] = 'm';
+		name[7] = 'p';
+		name[8] = '.';
+		name[9] = 's';
+		name[10] = 'o';
+		name[11] = 0;
+
+		sprintf(path,"%s/%s",getLibPath(),name);
+		crc_failed = self_crc_check(path);
+	}
+
+	if (!crc_failed)
+		CL_AndroidMove ( &cmd );
+#endif
 	// check to make sure the angles haven't wrapped
 	if ( cl.viewangles[PITCH] - oldAngles[PITCH] > 90 ) {
 		cl.viewangles[PITCH] = oldAngles[PITCH] + 90;

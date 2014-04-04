@@ -142,7 +142,11 @@ struct PNGFileReader
 		byte ident[SIGNATURE_LEN];
 		memcpy (ident, buf, SIGNATURE_LEN);
 
+#ifdef __ANDROID__
+		if ( png_sig_cmp (ident,0, SIGNATURE_LEN) )
+#else
 		if ( !png_check_sig (ident, SIGNATURE_LEN) )
+#endif
 		{
 			ri->Printf (PRINT_ERROR, "PNG signature not found in given image.");
 			return 0;

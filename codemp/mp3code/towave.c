@@ -139,6 +139,7 @@ decode (standard decoder) reduction_code:
 
 #include "port.h"
 
+#ifndef __ANDROID__
 // JDW
 #ifdef __linux__
 #include <sys/ioctl.h>
@@ -147,6 +148,7 @@ decode (standard decoder) reduction_code:
 #include <errno.h>
 #endif
 // JDW
+#endif
 
 #include "mp3struct.h"
 #include <assert.h>
