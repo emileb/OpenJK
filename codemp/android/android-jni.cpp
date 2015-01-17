@@ -4,7 +4,7 @@
 #include <string.h>
 #include <jni.h>
 #include <android/log.h>
-
+#include <unistd.h>
 
 #include "s-setup/s-setup.h"
 
@@ -153,7 +153,7 @@ void gameButton(int state,int code)
 				tcWeaponWheel->setEnabled(false); //disable WW while showing
 
 				tcForceSelect->setEnabled(true);
-				tcForceSelect->fade(0,5);
+				tcForceSelect->fade(touchcontrols::FADE_IN,5);
 			}
 			else
 			{
@@ -161,6 +161,13 @@ void gameButton(int state,int code)
 				tcForceSelect->setEnabled(false);
 			}
 		}
+	}
+	else if (code == PORT_ACT_MP_CHAT)
+	{
+		if (state)
+			showKeyboard(1);
+
+		PortableAction(state,code);
 	}
 	else if  (code == KEY_QUICK_KEY1)
 		PortableKeyEvent(state, A_F1, 0);
@@ -192,11 +199,10 @@ void weaponWheelSelected(int enabled)
 	}
 
 	if (enabled)
-		tcWeaponWheel->fade(0,5); //fade in
-	else
-		tcWeaponWheel->fade(1,5);
+		tcWeaponWheel->fade(touchcontrols::FADE_IN,5); //fade in
 
 }
+
 void weaponWheelChosen(int segment)
 {
 	PortableAction(1, PORT_ACT_WEAPON_SELECT,segment+1);
@@ -222,6 +228,12 @@ void menuButton(int state,int code)
 		if (state)
 			toggleKeyboard();
 		return;
+	}
+	else if (code == KEY_QUICK_CMD)
+	{
+		PortableKeyEvent(state, '~', 0);
+		if (state)
+			toggleKeyboard();
 	}
 	PortableKeyEvent(state, code, 0);
 }
@@ -361,6 +373,7 @@ void initControls(int width, int height,const char * graphics_path,const char *s
 		LOGI("creating controls");
 
 		touchcontrols::setGraphicsBasePath(graphics_path);
+		setControlsContainer(&controlsContainer);
 
 		controlsContainer.openGL_start.connect( sigc::ptr_fun(&openGLStart));
 		controlsContainer.openGL_end.connect( sigc::ptr_fun(&openGLEnd));
@@ -377,6 +390,7 @@ void initControls(int width, int height,const char * graphics_path,const char *s
 
 		tcMenuMain->signal_button.connect(  sigc::ptr_fun(&menuButton) );
 		tcMenuMain->addControl(new touchcontrols::Button("keyboard",touchcontrols::RectF(0,0,3,3),"keyboard",KEY_SHOW_KEYB));
+		tcMenuMain->addControl( new touchcontrols::Button("prompt",touchcontrols::RectF(23,0,26,3),"prompt",KEY_QUICK_CMD));
 
 		touchcontrols::Mouse *mouse = new touchcontrols::Mouse("mouse",touchcontrols::RectF(0,0,26,16),"");
 		mouse->setHideGraphics(true);
@@ -392,16 +406,21 @@ void initControls(int width, int height,const char * graphics_path,const char *s
 		tcGameMain->setAlpha(gameControlsAlpha);
 		tcGameMain->addControl(new touchcontrols::Button("jump",touchcontrols::RectF(24,3,26,5),"jump",PORT_ACT_JUMP));
 		tcGameMain->addControl(new touchcontrols::Button("crouch",touchcontrols::RectF(24,14,26,16),"crouch",PORT_ACT_DOWN));
-		tcGameMain->addControl(new touchcontrols::Button("attack",touchcontrols::RectF(23,7,26,10),"fire",KEY_SHOOT));
-		tcGameMain->addControl(new touchcontrols::Button("alt_attack",touchcontrols::RectF(20,7,23,10),"fire_alt",PORT_ACT_ALT_ATTACK));
-		tcGameMain->addControl(new touchcontrols::Button("use_force",touchcontrols::RectF(23,5,25,7),"fire_force",PORT_ACT_FORCE_USE));
+		tcGameMain->addControl(new touchcontrols::Button("attack",touchcontrols::RectF(23,7,26,10),"shoot",KEY_SHOOT));
+		tcGameMain->addControl(new touchcontrols::Button("alt_attack",touchcontrols::RectF(20,7,23,10),"shoot_alt",PORT_ACT_ALT_ATTACK));
+		tcGameMain->addControl(new touchcontrols::Button("use_force",touchcontrols::RectF(23,5,25,7),"shoot_force",PORT_ACT_FORCE_USE));
 
+		tcGameMain->addControl(new touchcontrols::Button("chat",touchcontrols::RectF(2,0,4,2),"chat",PORT_ACT_MP_CHAT));
 		tcGameMain->addControl(new touchcontrols::Button("saber_style",touchcontrols::RectF(4,0,6,2),"saber_style",PORT_ACT_SABER_STYLE));
+		tcGameMain->addControl(new touchcontrols::Button("scores",touchcontrols::RectF(6,0,8,2),"scores",PORT_ACT_MP_SCORES));
 
 		tcGameMain->addControl(new touchcontrols::Button("use",touchcontrols::RectF(21,5,23,7),"use",PORT_ACT_USE));
 
-		tcGameMain->addControl(new touchcontrols::Button("thirdperson",touchcontrols::RectF(16,0,18,2),"camera",PORT_ACT_THIRD_PERSON));
-		tcGameMain->addControl( new touchcontrols::Button("prompt",touchcontrols::RectF(9,0,11,2),"prompt",KEY_QUICK_CMD));
+
+		tcGameMain->addControl( new touchcontrols::Button("prompt",touchcontrols::RectF(9,0,11,2),"keyboard",KEY_QUICK_CMD));
+		tcGameMain->addControl(new touchcontrols::Button("duel",touchcontrols::RectF(13,0,15,2),"duel",PORT_ACT_MP_DUEL));
+
+		tcGameMain->addControl(new touchcontrols::Button("inventory",touchcontrols::RectF(16,0,18,2),"inv",KEY_SHOW_INV));
 
 		nextWeapon = new touchcontrols::Button("next_weapon",touchcontrols::RectF(0,3,3,5),"next_weap",PORT_ACT_NEXT_WEP);
 		tcGameMain->addControl(nextWeapon);
@@ -440,16 +459,16 @@ void initControls(int width, int height,const char * graphics_path,const char *s
 
 		tcWeaponWheel->addControl(weaponWheel);
 		tcWeaponWheel->setAlpha(0.8);
-/*
+
 		//Inventory
 		tcInventory->addControl(new touchcontrols::Button("thirdperson",touchcontrols::RectF(0,14,2,16),"camera",PORT_ACT_THIRD_PERSON));
-		tcInventory->addControl(new touchcontrols::Button("invuse",touchcontrols::RectF(3,14,5,16),"enter",PORT_ACT_INVUSE));
-		tcInventory->addControl(new touchcontrols::Button("invprev",touchcontrols::RectF(6,14,8,16),"arrow_left",PORT_ACT_INVPREV));
-		tcInventory->addControl(new touchcontrols::Button("invnext",touchcontrols::RectF(8,14,10,16),"arrow_right",PORT_ACT_INVNEXT));
+		tcInventory->addControl(new touchcontrols::Button("invuse",touchcontrols::RectF(2,14,4,16),"enter",PORT_ACT_INVUSE));
+		tcInventory->addControl(new touchcontrols::Button("invprev",touchcontrols::RectF(4,14,6,16),"arrow_left",PORT_ACT_INVPREV));
+		tcInventory->addControl(new touchcontrols::Button("invnext",touchcontrols::RectF(6,14,8,16),"arrow_right",PORT_ACT_INVNEXT));
 
 		tcInventory->signal_button.connect(  sigc::ptr_fun(&inventoryButton) );
 		tcInventory->setAlpha(0.5);
-*/
+
 		//Force Select "_new" added so reset to new postions
 		tcForceSelect->addControl(new touchcontrols::Button("force_absorb_new",touchcontrols::RectF(4,2,7,5),"f_lt_absorb",PORT_ACT_FORCE_ABSORB));
 		tcForceSelect->addControl(new touchcontrols::Button("force_heal_new",touchcontrols::RectF(4,5,7,8),"f_lt_heal",PORT_ACT_FORCE_HEAL));
@@ -474,7 +493,7 @@ void initControls(int width, int height,const char * graphics_path,const char *s
 		controlsContainer.addControlGroup(tcGameMain);
 		//controlsContainer.addControlGroup(tcGameWeapons);
 		controlsContainer.addControlGroup(tcMenuMain);
-		//controlsContainer.addControlGroup(tcInventory);
+		controlsContainer.addControlGroup(tcInventory);
 		controlsContainer.addControlGroup(tcWeaponWheel);
 		controlsContainer.addControlGroup(tcForceSelect);
 		controlsCreated = 1;
@@ -666,7 +685,7 @@ JAVA_FUNC(init) ( JNIEnv* env,	jobject thiz,jobject act,jstring graphics_dir,jin
 
 //TODO this is in the gles library now so can not see
 //extern int androidSwapped;
- int androidSwapped = true;
+int androidSwapped = true;
 
 jint EXPORT_ME
 JAVA_FUNC(frame) ( JNIEnv* env,	jobject thiz )
@@ -704,7 +723,12 @@ __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM* vm, void* reserve
 void EXPORT_ME
 JAVA_FUNC(keypress) (JNIEnv *env, jobject obj,jint down, jint keycode, jint unicode)
 {
-	//LOGI("keypress %d",keycode);
+	if (controlsContainer.isEditing())
+	{
+		if (down && (keycode == A_ESCAPE ))
+			controlsContainer.finishEditing();
+		return;
+	}
 	PortableKeyEvent(down,keycode,unicode);
 }
 

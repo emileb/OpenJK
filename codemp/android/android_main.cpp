@@ -80,7 +80,7 @@ void Conbuf_AppendText( const char *pMsg )
 	char msg[MAXPRINTMSG] = {0};
 	Q_strncpyz(msg, pMsg, sizeof(msg));
 	Q_StripColor(msg);
-	 ((void)__android_log_print(ANDROID_LOG_INFO,"JK3", msg));
+	 ((void)__android_log_print(ANDROID_LOG_INFO,"JK3","%s", msg));
 	//printf("%s", msg);
 }
 
@@ -143,7 +143,7 @@ void Sys_Error( const char *error, ... )
 	va_start (argptr,error);
 	Q_vsnprintf (string, sizeof(string), error, argptr);
 	va_end (argptr);
-	((void)__android_log_print(ANDROID_LOG_ERROR,"JK3", string));
+	((void)__android_log_print(ANDROID_LOG_ERROR,"JK3","%s", string));
 	//Sys_ErrorDialog( string );
 	Sys_Print( string );
 
@@ -425,9 +425,9 @@ void *Sys_LoadGameDll( const char *name, void *(QDECL **moduleAPI)(int, ...) )
 
 
     char  lib_path[512];
-    	sprintf(lib_path,"%s/lib%s", getLibPath(),filename);
-    	LOGI("Trying to load Android lib: %s",lib_path);
-    	libHandle = dlopen (lib_path, RTLD_LAZY );
+    sprintf(lib_path,"%s/lib%s", getLibPath(),filename);
+    LOGI("Trying to load Android lib: %s",lib_path);
+    libHandle = dlopen (lib_path, RTLD_LAZY );
 
 
 

@@ -15,6 +15,13 @@ LOCAL_LDLIBS := $(JK3_BASE_LDLIBS)
 
 
 LOCAL_LDLIBS +=  -lGLESv1_CM -lEGL -llog -lz
+
+#Needed so lib can be loaded (_exit error)
+LOCAL_LDLIBS += -fuse-ld=bfd 
+
+#Hacky hack hack
+LOCAL_LDLIBS +=	-L$(TOP_DIR)/openssl/libs/ -lcrypto
+
 LOCAL_STATIC_LIBRARIES := sigc s-setup libzip libpng  lz 
 LOCAL_SHARED_LIBRARIES := touchcontrols openal SDL2 SDL2_mixer
 

@@ -191,7 +191,9 @@ void PortableAction(int state, int action,int param)
 
 	case PORT_ACT_INVUSE:
 		if (state)
-			postCommand("invuse\n");
+			postCommand("+button2\n");
+		else
+			postCommand("-button2\n");
 		break;
 	case PORT_ACT_INVPREV:
 		if (state)
@@ -271,13 +273,22 @@ void PortableAction(int state, int action,int param)
 			postCommand("force_heal\n");
 		break;
 	case PORT_ACT_FORCE_LIGHT:
-		(state)?KeyDownPort(&in_buttons[1]):KeyUpPort(&in_buttons[1]);
+		if (state)
+			postCommand("+force_lightning\n");
+		else
+			postCommand("-force_lightning\n");
 		break;
 	case PORT_ACT_FORCE_GRIP:
-		(state)?KeyDownPort(&in_buttons[6]):KeyUpPort(&in_buttons[6]);
+		if (state)
+			postCommand("+force_grip\n");
+		else
+			postCommand("-force_grip\n");
 		break;
 	case PORT_ACT_FORCE_DRAIN:
-		(state)?KeyDownPort(&in_buttons[3]):KeyUpPort(&in_buttons[3]);
+		if (state)
+			postCommand("+force_drain\n");
+		else
+			postCommand("-force_drain\n");
 		break;
 	case PORT_ACT_FORCE_RAGE:
 		if (state)
@@ -295,6 +306,21 @@ void PortableAction(int state, int action,int param)
 		if (state)
 			postCommand("force_sight\n");
 		break;
+	case PORT_ACT_MP_CHAT:
+		if (state)
+			postCommand("messagemode\n");
+		break;
+	case PORT_ACT_MP_SCORES:
+		if (state)
+			postCommand("+scores\n");
+		else
+			postCommand("-scores\n");
+		break;
+	case PORT_ACT_MP_DUEL:
+		if (state)
+			postCommand("engage_duel\n");
+		break;
+
 	}
 }
 
@@ -312,7 +338,7 @@ void PortableMouse(float dx,float dy)
 int absx=0,absy=0;
 void PortableMouseAbs(float x,float y)
 {
-//	Sys_QueEvent( 0, SE_MOUSE_ABS, x, y, 0, NULL );
+	//	Sys_QueEvent( 0, SE_MOUSE_ABS, x, y, 0, NULL );
 
 }
 
