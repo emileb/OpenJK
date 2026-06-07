@@ -14,6 +14,10 @@
 
 #include "game_interface.h"
 
+// OpenJK client state, used by PortableGetScreenMode(). client.h resolves its own
+// relative includes from code/client/, so it is safe to pull in from here.
+#include "../client/client.h"
+
 // SDL's internal keyboard injection (same approach iortcw / TFE use): pushes a
 // key event into SDL's queue under SDL's lock. OpenJK reads it through the normal
 // SDL_KEYDOWN/UP path in sdl_input.cpp, so remappable binds keep working.
@@ -134,12 +138,23 @@ bool PortableSetAlwaysRun(bool run)
     return false;
 }
 
-// STUB: always reports menu mode. A correct implementation would query OpenJK's
-// state (main menu / in-game / console up) to pick TS_MENU vs TS_GAME so the right
-// touch control set shows; see TFE's version. Menu mode keeps the on-screen mouse
-// + keyboard usable for now.
+// Map OpenJK's client state onto the touch screen mode so the right control set
+// shows: console overlay -> TS_CONSOLE, any UI/menu up -> TS_MENU, live gameplay
+// -> TS_GAME. Anything else (loading, disconnected at the main menu, cinematics)
+// falls back to menu so the on-screen mouse + keyboard stay usable.
 touchscreemode_t PortableGetScreenMode()
 {
+    const int catcher = Key_GetCatcher();
+
+    if (catcher & KEYCATCH_CONSOLE)
+        return TS_CONSOLE;
+
+    if (catcher & KEYCATCH_UI)
+        return TS_MENU;
+
+    if (cls.state == CA_ACTIVE)
+        return TS_GAME;
+
     return TS_MENU;
 }
 
