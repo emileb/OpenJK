@@ -740,7 +740,15 @@ char *Sys_StripAppBundle( char *dir )
 #	endif
 #endif
 
+#ifdef __ANDROID__
+// On Android the engine is built as a shared library and the entry point is
+// invoked from the touch-layer JNI bridge (PortableInit) rather than by the C
+// runtime, so it is named main_android to avoid SDL's `#define main SDL_main`
+// hijack and the special semantics of a real main().
+int main_android ( int argc, char* argv[] )
+#else
 int main ( int argc, char* argv[] )
+#endif
 {
 	int		i;
 	char	commandLine[ MAX_STRING_CHARS ] = { 0 };

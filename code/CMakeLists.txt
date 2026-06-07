@@ -386,11 +386,13 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 
 	if(ANDROID)
 		# OpenTouch Android glue (JNI bridge + on-screen touch controls), shared by
-		# every engine in Alpha Touch. The OpenJK-specific mobile entry point and
-		# touch_interface still need to be authored (see TheForceEngine's
-		# TheForceEngine/mobile/game_interface.cpp + Clibs_OpenTouch/alpha/touch_interface_tfe.cpp
-		# for a template) and added below.
+		# every engine in Alpha Touch, plus the OpenJK-specific mobile entry point
+		# (mobile/game_interface.cpp). The Portable* functions there are currently
+		# stubs; see TheForceEngine's TheForceEngine/mobile/game_interface.cpp +
+		# Clibs_OpenTouch/alpha/touch_interface_tfe.cpp for a fully-wired template.
 		set(SPEngineOpenTouchFiles
+			"${SPDir}/mobile/game_interface.cpp"
+			"${CLIBS_DIR}/psi/touch_interface_openjk.cpp"
 			"${CLIBS_DIR}/alpha/android_jni.cpp"
 			"${CLIBS_DIR}/touch_interface_base.cpp"
 			"${CLIBS_DIR}/LogWritter.c"
@@ -399,6 +401,13 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 			)
 		source_group("opentouch" FILES ${SPEngineOpenTouchFiles})
 		set(SPEngineFiles ${SPEngineFiles} ${SPEngineOpenTouchFiles})
+
+		# The per-game touch interface builds its touch-settings XML filenames by
+		# concatenating the ENGINE_NAME string literal (e.g. "game_" ENGINE_NAME
+		# ".xml"). Only this source uses it, so scope the define to the file.
+		set_source_files_properties(
+			"${CLIBS_DIR}/psi/touch_interface_openjk.cpp"
+			PROPERTIES COMPILE_DEFINITIONS "ENGINE_NAME=\"openjk\"")
 	endif()
 
     # Transparently use our bundled minizip.
