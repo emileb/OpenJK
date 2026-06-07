@@ -32,6 +32,10 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "sys_public.h"
 #include "con_local.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 static char binaryPath[ MAX_OSPATH ] = { 0 };
 static char installPath[ MAX_OSPATH ] = { 0 };
 
@@ -141,6 +145,13 @@ void Sys_Print( const char *msg ) {
 	}
 	ConsoleLogAppend( msg );
 	CON_Print( msg );
+
+#ifdef __ANDROID__
+	// Mirror all console/terminal output to the Android log (logcat). msg is
+	// already a fully-formatted string, so pass it through "%s" rather than as a
+	// format string to avoid mis-parsing any '%' it contains.
+	__android_log_print( ANDROID_LOG_INFO, "OpenJK", "%s", msg );
+#endif
 }
 
 /*
@@ -288,6 +299,7 @@ void Sys_UnloadDll( void *dllHandle )
 
 	Sys_UnloadLibrary(dllHandle);
 }
+extern "C" const char *nativeLibsPath;
 
 /*
 =================
@@ -308,6 +320,17 @@ void *Sys_LoadDll( const char *name, qboolean useSystemLib )
 		return NULL;
 	}
 
+#ifdef __ANDROID__
+    char *fn = va( "%s/%s", nativeLibsPath, name );
+    dllhandle = Sys_LoadLibrary( fn );
+    if ( dllhandle )
+        return dllhandle;
+    else
+    {
+        Com_Printf( "%s(%s) failed: \"%s\"\n", __FUNCTION__, fn, Sys_LibraryError() );
+        return NULL; //crash
+    }
+#endif
 	if ( useSystemLib )
 	{
 		Com_Printf( "Trying to load \"%s\"...\n", name );
@@ -553,6 +576,18 @@ void *Sys_LoadSPGameDll( const char *name, GetGameAPIProc **GetGameAPI )
 
 	assert( GetGameAPI );
 
+#ifdef __ANDROID__
+    Com_sprintf (filename, sizeof(filename), "lib%s" DLL_EXT, name);
+
+    char *fn = va( "%s/%s", nativeLibsPath, filename );
+    libHandle = Sys_LoadLibrary( fn );
+    if(!libHandle)
+    {
+        Com_Printf( "%s(%s) failed: \"%s\"\n", __FUNCTION__, fn, Sys_LibraryError() );
+        //return NULL; //crash
+    }
+#else
+
 	Com_sprintf (filename, sizeof(filename), "%s" ARCH_STRING DLL_EXT, name);
 
 #if defined(MACOS_X) && !defined(_JK2EXE)
@@ -586,6 +621,7 @@ void *Sys_LoadSPGameDll( const char *name, GetGameAPIProc **GetGameAPI )
 		if ( !libHandle )
 			return NULL;
 	}
+#endif
 
 	*GetGameAPI = (GetGameAPIProc *)Sys_LoadFunction( libHandle, "GetGameAPI" );
 	if ( !*GetGameAPI ) {
