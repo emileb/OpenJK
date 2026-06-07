@@ -90,7 +90,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 			${SDL2_ANDROID_INCLUDE_DIR}
 			${SDL2_IMAGE_ANDROID_INCLUDE_DIR}
 			${CLIBS_DIR}
-			${CLIBS_DIR}/alpha
+			${CLIBS_DIR}/psi
 			${TOUCH_CONTROLS_DIR}
 			)
 		set(SPEngineLibraries
@@ -393,7 +393,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 		set(SPEngineOpenTouchFiles
 			"${SPDir}/mobile/game_interface.cpp"
 			"${CLIBS_DIR}/psi/touch_interface_openjk.cpp"
-			"${CLIBS_DIR}/alpha/android_jni.cpp"
+			"${CLIBS_DIR}/psi/android_jni.cpp"
 			"${CLIBS_DIR}/touch_interface_base.cpp"
 			"${CLIBS_DIR}/LogWritter.c"
 			"${CLIBS_DIR}/fts.c"
@@ -428,7 +428,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 				)
 			source_group("win32" FILES ${SPEngineWin32Files})
 			set(SPEngineFiles ${SPEngineFiles} ${SPEngineWin32Files})
-			
+
 			add_executable(${ProjectName} WIN32 ${SPEngineFiles})
 			if(UseInternalSDL2)
 				if(CMAKE_SIZEOF_VOID_P EQUAL 4)
@@ -449,7 +449,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 				set(SPEngineFiles ${SPEngineFiles} ${SPDirName}/macosx/OpenJK.icns)
 				set_source_files_properties(${SPDirName}/macosx/English.lproj/InfoPlist.strings PROPERTIES MACOSX_PACKAGE_LOCATION Resources/English.lproj)
 				set(SPEngineFiles ${SPEngineFiles} ${SPDirName}/macosx/English.lproj/InfoPlist.strings)
-				
+
 				add_executable(${ProjectName} MACOSX_BUNDLE ${SPEngineFiles})
 				set_target_properties(${ProjectName} PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${SPDirName}/macosx/OpenJKInfo.plist")
 			else(MakeApplicationBundles)

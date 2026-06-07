@@ -4,41 +4,101 @@
 // to the OpenJK single-player engine. The touch UI / JNI bridge calls these
 // Portable* functions to drive input, query screen state and pump the engine.
 //
-// Modelled on TheForceEngine's TheForceEngine/mobile/game_interface.cpp.
-// Keyboard and mouse-look are wired through SDL injection (which OpenJK's normal
-// sdl_input.cpp consumes). Gameplay movement / discrete actions need engine-side
-// hooks OpenJK does not expose yet, so PortableMove / PortableAction are stubs.
+// Action/command mapping is ported from the old jk3 port (jk3_old's in_android.cpp).
+// Keyboard and mouse-look go through SDL injection (consumed by sdl_input.cpp).
+// Gameplay actions become console commands; movement is analog. Both are applied
+// on the engine thread via CL_AndroidMove() (called from CL_CreateCmd) so command
+// execution and usercmd edits never race the main loop. Only the lightweight queue
+// insert / float stores happen on the touch thread, which is benign.
 
 #include "SDL.h"
 #include "SDL_scancode.h"
 
 #include "game_interface.h"
 
-// OpenJK client state, used by PortableGetScreenMode(). client.h resolves its own
+// OpenJK client state + command buffer + usercmd_t. client.h resolves its own
 // relative includes from code/client/, so it is safe to pull in from here.
 #include "../client/client.h"
-
-// SDL's internal keyboard injection (same approach iortcw / TFE use): pushes a
-// key event into SDL's queue under SDL's lock. OpenJK reads it through the normal
-// SDL_KEYDOWN/UP path in sdl_input.cpp, so remappable binds keep working.
-extern "C" int SDL_SendKeyboardKey(Uint8 state, SDL_Scancode scancode);
 
 // Android engine entry point, defined in shared/sys/sys_main.cpp (named
 // main_android there to avoid SDL's `#define main SDL_main` and the special
 // semantics of a real main()).
 extern int main_android(int argc, char *argv[]);
 
+// SDL's internal keyboard injection (same approach iortcw / TFE use): pushes a
+// key event into SDL's queue under SDL's lock. OpenJK reads it through the normal
+// SDL_KEYDOWN/UP path in sdl_input.cpp, so remappable binds keep working.
+extern "C" int SDL_SendKeyboardKey(Uint8 state, SDL_Scancode scancode);
+
 // Look sensitivities. Deltas from the touch layer are normalised; these scale
-// them to the pixel units MouseMove() forwards to SDL_InjectMouse(). Values
-// mirror TheForceEngine's.
+// them to the pixel units MouseMove() forwards to SDL_InjectMouse().
 static const float ANDROID_LOOK_MOUSE_X_SCALE = 1000.0f;
 static const float ANDROID_LOOK_MOUSE_Y_SCALE =  800.0f;
 // Joystick-look would normally be applied every frame while the stick is held;
-// without a per-frame engine hook we emit on each stick-move event instead, so
+// without a per-frame look hook we emit on each stick-move event instead, so
 // joystick-look mode turns only while the stick is moving (mouse-look mode, the
-// default, behaves correctly). Kept small to match TFE's per-frame magnitude.
+// default, behaves correctly). Kept small to match the per-frame magnitude.
 static const float ANDROID_LOOK_JOY_X_SCALE   =   12.0f;
 static const float ANDROID_LOOK_JOY_Y_SCALE   =    8.0f;
+
+// --- Cross-thread plumbing, drained on the engine thread in CL_AndroidMove() ---
+
+// Pending console commands. Single-producer (touch thread) / single-consumer
+// (engine thread) ring buffer; same lock-free pattern the old jk3 port used.
+#define ANDROID_CMD_QUEUE_LEN 128
+static char         s_cmdQueue[ANDROID_CMD_QUEUE_LEN][256];
+static volatile int s_cmdAvail = 0;
+static volatile int s_cmdUsed  = 0;
+
+// Latest analog move from the touch sticks, each in [-1, 1].
+static volatile float s_androidFwd  = 0.0f;
+static volatile float s_androidSide = 0.0f;
+
+static void postCommand( const char *cmd )
+{
+	if ( s_cmdAvail >= s_cmdUsed + ANDROID_CMD_QUEUE_LEN )
+		return; // queue full, drop
+	Q_strncpyz( s_cmdQueue[s_cmdAvail & (ANDROID_CMD_QUEUE_LEN - 1)], cmd, sizeof(s_cmdQueue[0]) );
+	s_cmdAvail++;
+}
+
+// Queue a +action / -action console command (press/release).
+static void buttonCommand( int state, const char *name )
+{
+	char buf[64];
+	Com_sprintf( buf, sizeof(buf), "%c%s", state ? '+' : '-', name );
+	postCommand( buf );
+}
+
+static bool portableInMenu( void )
+{
+	const int c = Key_GetCatcher();
+	return ( c & KEYCATCH_UI ) || ( c & KEYCATCH_CONSOLE );
+}
+
+static void sendKey( int state, SDL_Scancode scancode )
+{
+	SDL_SendKeyboardKey( state ? SDL_PRESSED : SDL_RELEASED, scancode );
+}
+
+// Called every frame from CL_CreateCmd (engine thread). Drains queued commands
+// and folds the analog touch movement into the outgoing usercmd.
+void CL_AndroidMove( usercmd_t *cmd )
+{
+	while ( s_cmdUsed != s_cmdAvail )
+	{
+		// EXEC_NOW: run immediately on this (engine) thread, one whole command,
+		// so queued strings never get concatenated in the command buffer.
+		Cbuf_ExecuteText( EXEC_NOW, s_cmdQueue[s_cmdUsed & (ANDROID_CMD_QUEUE_LEN - 1)] );
+		s_cmdUsed++;
+	}
+
+	int fm = cmd->forwardmove + (int)( s_androidFwd  * 127.0f );
+	int rm = cmd->rightmove   + (int)( s_androidSide * 127.0f );
+
+	cmd->forwardmove = (signed char)( fm >  127 ?  127 : ( fm < -127 ? -127 : fm ) );
+	cmd->rightmove   = (signed char)( rm >  127 ?  127 : ( rm < -127 ? -127 : rm ) );
+}
 
 extern "C" {
 
@@ -64,26 +124,115 @@ int PortableKeyEvent(int state, int code, int unitcode)
     return 0;
 }
 
-// STUB: discrete gameplay actions (fire, jump, use, weapon select, ...). Hooking
-// these up requires mapping PORT_ACT_* codes onto OpenJK's key binds or command
-// buffer from the touch thread, which needs care (thread-safety, remap support).
-// Left for later, as flagged.
+// Touch button / stick action. Mapped from PORT_ACT_* onto OpenJK console
+// commands (ported from jk3_old/in_android.cpp). In menus, navigation actions are
+// injected as SDL keys instead so the UI behaves like a real keyboard/mouse.
 void PortableAction(int state, int action)
 {
+    if (portableInMenu())
+    {
+        switch (action)
+        {
+            case PORT_ACT_MENU_UP:      sendKey(state, SDL_SCANCODE_UP);      return;
+            case PORT_ACT_MENU_DOWN:    sendKey(state, SDL_SCANCODE_DOWN);    return;
+            case PORT_ACT_MENU_LEFT:    sendKey(state, SDL_SCANCODE_LEFT);    return;
+            case PORT_ACT_MENU_RIGHT:   sendKey(state, SDL_SCANCODE_RIGHT);   return;
+            case PORT_ACT_MENU_SELECT:  sendKey(state, SDL_SCANCODE_RETURN);  return;
+            case PORT_ACT_MENU_CONFIRM: sendKey(state, SDL_SCANCODE_Y);       return;
+            case PORT_ACT_MENU_BACK:
+            case PORT_ACT_MENU_ABORT:
+            case PORT_ACT_MENU_SHOW:    sendKey(state, SDL_SCANCODE_ESCAPE);  return;
+
+            case PORT_ACT_MOUSE_LEFT:   MouseButton(state, BUTTON_PRIMARY);   return;
+            case PORT_ACT_MOUSE_RIGHT:  MouseButton(state, BUTTON_SECONDARY); return;
+        }
+        // Otherwise fall through so a gameplay action started before the menu
+        // opened still gets its release.
+    }
+
+    switch (action)
+    {
+        // --- Continuous (+/-) movement and combat ---
+        case PORT_ACT_LEFT:        buttonCommand(state, "left");       break;
+        case PORT_ACT_RIGHT:       buttonCommand(state, "right");      break;
+        case PORT_ACT_FWD:         buttonCommand(state, "forward");    break;
+        case PORT_ACT_BACK:        buttonCommand(state, "back");       break;
+        case PORT_ACT_LOOK_UP:     buttonCommand(state, "lookup");     break;
+        case PORT_ACT_LOOK_DOWN:   buttonCommand(state, "lookdown");   break;
+        case PORT_ACT_MOVE_LEFT:   buttonCommand(state, "moveleft");   break;
+        case PORT_ACT_MOVE_RIGHT:  buttonCommand(state, "moveright");  break;
+        case PORT_ACT_STRAFE:      buttonCommand(state, "strafe");     break;
+        case PORT_ACT_SPEED:
+        case PORT_ACT_SPRINT:
+        case PORT_ACT_SMART_TOGGLE_RUN: buttonCommand(state, "speed"); break;
+        case PORT_ACT_USE:         buttonCommand(state, "use");        break;
+        case PORT_ACT_ATTACK:      buttonCommand(state, "attack");     break;
+        case PORT_ACT_ALT_ATTACK:
+        case PORT_ACT_ALT_FIRE:    buttonCommand(state, "altattack");  break;
+        case PORT_ACT_FORCE_USE:   buttonCommand(state, "useforce");   break;
+        case PORT_ACT_JUMP:
+        case PORT_ACT_UP:          buttonCommand(state, "moveup");     break;
+        case PORT_ACT_CROUCH:
+        case PORT_ACT_DOWN:        buttonCommand(state, "movedown");   break;
+
+        // --- One-shot commands (issued on press) ---
+        case PORT_ACT_NEXT_WEP:    if (state) postCommand("weapnext");        break;
+        case PORT_ACT_PREV_WEP:    if (state) postCommand("weapprev");        break;
+        case PORT_ACT_QUICKSAVE:   if (state) postCommand("save quick");      break;
+        case PORT_ACT_QUICKLOAD:   if (state) postCommand("load quick");      break;
+        case PORT_ACT_INVUSE:      if (state) postCommand("invuse");          break;
+        case PORT_ACT_INVPREV:     if (state) postCommand("invprev");         break;
+        case PORT_ACT_INVNEXT:     if (state) postCommand("invnext");         break;
+        case PORT_ACT_NEXT_FORCE:  if (state) postCommand("forcenext");       break;
+        case PORT_ACT_PREV_FORCE:  if (state) postCommand("forceprev");       break;
+        case PORT_ACT_DATAPAD:
+        case PORT_ACT_HELPCOMP:    if (state) postCommand("datapad");         break;
+        case PORT_ACT_SABER_STYLE: if (state) postCommand("saberAttackCycle"); break;
+        case PORT_ACT_THIRD_PERSON:if (state) postCommand("cg_thirdperson !"); break;
+        case PORT_ACT_SABER_SEL:   if (state) postCommand("weapon 1");        break;
+
+        // --- Force powers (issued on press) ---
+        case PORT_ACT_FORCE_PULL:   if (state) postCommand("force_pull");      break;
+        case PORT_ACT_FORCE_MIND:   if (state) postCommand("force_distract");  break;
+        case PORT_ACT_FORCE_PUSH:   if (state) postCommand("force_throw");     break;
+        case PORT_ACT_FORCE_SPEED:  if (state) postCommand("force_speed");     break;
+        case PORT_ACT_FORCE_HEAL:   if (state) postCommand("force_heal");      break;
+        case PORT_ACT_FORCE_GRIP:   if (state) postCommand("force_grip");      break;
+        case PORT_ACT_FORCE_LIGHT:  if (state) postCommand("force_lightning"); break;
+        case PORT_ACT_FORCE_DRAIN:  if (state) postCommand("force_drain");     break;
+        case PORT_ACT_FORCE_RAGE:   if (state) postCommand("force_rage");      break;
+        case PORT_ACT_FORCE_PROTECT:if (state) postCommand("force_protect");   break;
+        case PORT_ACT_FORCE_ABSORB: if (state) postCommand("force_absorb");    break;
+        case PORT_ACT_FORCE_SIGHT:  if (state) postCommand("force_sight");     break;
+
+        default:
+            // Direct weapon select: PORT_ACT_WEAP0..WEAP13 -> "weapon N".
+            if (state && action >= PORT_ACT_WEAP0 && action <= PORT_ACT_WEAP13)
+            {
+                char buf[32];
+                Com_sprintf(buf, sizeof(buf), "weapon %d", action - PORT_ACT_WEAP0);
+                postCommand(buf);
+            }
+            // Anything else (RELOAD, KICK, LEAN, vehicle/flight actions, ...) has
+            // no clean JKA mapping yet and is intentionally ignored for now.
+            break;
+    }
 }
 
-// STUB: analog movement. OpenJK takes movement from SDL key/axis state; injecting
-// an analog move axis has no clean entry point yet. Left for later.
 void PortableMove(float fwd, float strafe)
 {
+    PortableMoveFwd(fwd);
+    PortableMoveSide(strafe);
 }
 
 void PortableMoveFwd(float fwd)
 {
+    s_androidFwd = (fwd > 1.0f) ? 1.0f : (fwd < -1.0f ? -1.0f : fwd);
 }
 
 void PortableMoveSide(float strafe)
 {
+    s_androidSide = (strafe > 1.0f) ? 1.0f : (strafe < -1.0f ? -1.0f : strafe);
 }
 
 // Look pitch (vertical). Forwarded straight to the SDL mouse-motion injector.
@@ -118,10 +267,10 @@ void PortableMouseButton(int state, int button, float dx, float dy)
     MouseButton(state, button);
 }
 
-// STUB: console command injection. Would route to OpenJK's command buffer, but
-// that is driven from the touch thread so needs thread-safe queuing. Left for later.
+// Console command from the touch layer (quick commands etc.).
 void PortableCommand(const char *cmd)
 {
+    postCommand(cmd);
 }
 
 void PortableAutomapControl(float zoom, float x, float y)
