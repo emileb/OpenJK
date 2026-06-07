@@ -374,6 +374,47 @@ static void DrawSkySide( struct image_s *image, const int mins[2], const int max
 
 	for ( t = mins[1]+HALF_SKY_SUBDIVISIONS; t < maxs[1]+HALF_SKY_SUBDIVISIONS; t++ )
 	{
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		const int Numv = (maxs[0] - mins[0] + 1) * 2;
+		GLfloat *vs = (GLfloat *)malloc(sizeof(GLfloat) * Numv * 5);
+		int vi = 0;
+		for ( s = mins[0]+HALF_SKY_SUBDIVISIONS; s <= maxs[0]+HALF_SKY_SUBDIVISIONS; s++ )
+		{
+			GLfloat *vptr = vs + vi * 2 * 5;
+			memcpy( vptr, s_skyTexCoords[t][s], sizeof(GLfloat) * 2 );
+			memcpy( vptr + 2, s_skyPoints[t][s], sizeof(GLfloat) * 3 );
+
+			memcpy( vptr + 5, s_skyTexCoords[t+1][s], sizeof(GLfloat) * 2 );
+			memcpy( vptr + 7, s_skyPoints[t+1][s], sizeof(GLfloat) * 3 );
+			vi++;
+		}
+
+		qglVertexPointer(3, GL_FLOAT, sizeof(GLfloat) * 5, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 5, vs);
+		qglDrawArrays(GL_TRIANGLE_STRIP, 0, Numv);
+
+		free(vs);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 		qglBegin( GL_TRIANGLE_STRIP );
 
 		for ( s = mins[0]+HALF_SKY_SUBDIVISIONS; s <= maxs[0]+HALF_SKY_SUBDIVISIONS; s++ )
@@ -386,6 +427,7 @@ static void DrawSkySide( struct image_s *image, const int mins[2], const int max
 		}
 
 		qglEnd();
+#endif
 	}
 }
 

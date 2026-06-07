@@ -77,12 +77,21 @@ void RE_StretchRaw (int x, int y, int w, int h, int cols, int rows, const byte *
 		}
 #endif
 
+#ifdef USE_GLES1 // GLES 1.1 requires the internal format to match the source format (GL_RGBA)
+		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#else
 		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#endif
 
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+#else
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glConfig.clampToEdgeAvailable ? GL_CLAMP_TO_EDGE : GL_CLAMP );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glConfig.clampToEdgeAvailable ? GL_CLAMP_TO_EDGE : GL_CLAMP );
+#endif
 
 #ifdef TIMEBIND
 		if ( r_ignore->integer )
@@ -126,6 +135,41 @@ void RE_StretchRaw (int x, int y, int w, int h, int cols, int rows, const byte *
 	}
 	qglColor3f( tr.identityLight, tr.identityLight, tr.identityLight );
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			0.5f / cols,  0.5f / rows,
+			(float)x, (float)y,
+			( cols - 0.5f ) / cols ,  0.5f / rows,
+			(float)x+(float)w, (float)y,
+			( cols - 0.5f ) / cols, ( rows - 0.5f ) / rows,
+			(float)x+(float)w, (float)y+(float)h,
+			0.5f / cols, ( rows - 0.5f ) / rows,
+			(float)x, (float)y+(float)h,
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin (GL_QUADS);
 	qglTexCoord2f ( 0.5f / cols,  0.5f / rows );
 	qglVertex2f (x, y);
@@ -136,6 +180,7 @@ void RE_StretchRaw (int x, int y, int w, int h, int cols, int rows, const byte *
 	qglTexCoord2f ( 0.5f / cols, ( rows - 0.5f ) / rows );
 	qglVertex2f (x, y+h);
 	qglEnd ();
+#endif
 }
 
 
@@ -148,12 +193,21 @@ void RE_UploadCinematic (int cols, int rows, const byte *data, int client, qbool
 	if ( cols != tr.scratchImage[client]->width || rows != tr.scratchImage[client]->height ) {
 		tr.scratchImage[client]->width = cols;
 		tr.scratchImage[client]->height = rows;
+#ifdef USE_GLES1 // GLES 1.1 requires the internal format to match the source format (GL_RGBA)
+		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#else
 		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#endif
 
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+#else
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glConfig.clampToEdgeAvailable ? GL_CLAMP_TO_EDGE : GL_CLAMP );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glConfig.clampToEdgeAvailable ? GL_CLAMP_TO_EDGE : GL_CLAMP );
+#endif
 	} else {
 		if (dirty) {
 			// otherwise, just subimage upload it so that drivers can tell we are going to be changing
@@ -428,6 +482,56 @@ static void RE_Blit(float fX0, float fY0, float fX1, float fY1, float fX2, float
 	qglColor3f( 1.0f, 1.0f, 1.0f );
 
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			// TL...
+			//
+			//		qglTexCoord2f( fU0 / (float)pImage->width,  fV0 / (float)pImage->height );
+			 0.0f,0.0f,
+			 fX0, fY0,
+
+			// TR...
+			//
+			//		qglTexCoord2f( fU1 / (float)pImage->width,  fV1 / (float)pImage->height );
+			 1.0f,0.0f,
+			 fX1, fY1,
+
+			// BR...
+			//
+			//		qglTexCoord2f( fU2 / (float)pImage->width,  fV2 / (float)pImage->height );
+			 1.0f,1.0f,
+			 fX2, fY2,
+
+			// BL...
+			//
+			//		qglTexCoord2f( fU3 / (float)pImage->width,  fV3 / (float)pImage->height );
+			 0.0f,1.0f,
+			 fX3, fY3,
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin (GL_QUADS);
 	{
 		// TL...
@@ -455,6 +559,7 @@ static void RE_Blit(float fX0, float fY0, float fX1, float fY1, float fX2, float
 		qglVertex2f( fX3, fY3);
 	}
 	qglEnd ();
+#endif
 }
 
 static void RE_KillDissolve(void)
@@ -883,7 +988,11 @@ qboolean RE_InitDissolve(qboolean bForceCircularExtroWipe)
 											qfalse,					// qboolean mipmap
 											qfalse,					// qboolean allowPicmip
 											qfalse,					// qboolean allowTC
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+											GL_CLAMP_TO_EDGE
+#else
 											GL_CLAMP				// int glWrapClampMode
+#endif
 											);
 
 
@@ -899,7 +1008,11 @@ qboolean RE_InitDissolve(qboolean bForceCircularExtroWipe)
 											qfalse,				// qboolean mipmap
 											qfalse,				// qboolean allowPicmip
 											qfalse,				// qboolean allowTC
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+											GL_CLAMP_TO_EDGE
+#else
 											GL_CLAMP			// int glWrapClampMode
+#endif
 											);
 
 			if (pbReSampleBuffer)
@@ -946,7 +1059,11 @@ qboolean RE_InitDissolve(qboolean bForceCircularExtroWipe)
 															qfalse,						// qboolean mipmap
 															qfalse,						// qboolean allowPicmip
 															qfalse,						// qboolean allowTC
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+															GL_CLAMP_TO_EDGE
+#else
 															GL_CLAMP					// int glWrapClampMode
+#endif
 														);
 			}
 
@@ -959,7 +1076,11 @@ qboolean RE_InitDissolve(qboolean bForceCircularExtroWipe)
 														qfalse,						// qboolean mipmap
 														qfalse,						// qboolean allowPicmip
 														qfalse,						// qboolean allowTC
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+														GL_CLAMP_TO_EDGE
+#else
 														GL_CLAMP					// int glWrapClampMode
+#endif
 													);
 				Dissolve.pDissolve = R_FindImageFile(	"textures/common/dissolve",	// const char *name
 														qfalse,						// qboolean mipmap
@@ -977,7 +1098,11 @@ qboolean RE_InitDissolve(qboolean bForceCircularExtroWipe)
 															qfalse,						// qboolean mipmap
 															qfalse,						// qboolean allowPicmip
 															qfalse,						// qboolean allowTC
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+															GL_CLAMP_TO_EDGE
+#else
 															GL_CLAMP					// int glWrapClampMode
+#endif
 														);
 				}
 				break;
@@ -988,7 +1113,11 @@ qboolean RE_InitDissolve(qboolean bForceCircularExtroWipe)
 															qfalse,						// qboolean mipmap
 															qfalse,						// qboolean allowPicmip
 															qfalse,						// qboolean allowTC
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+															GL_CLAMP_TO_EDGE
+#else
 															GL_CLAMP					// int glWrapClampMode
+#endif
 														);
 				}
 				break;

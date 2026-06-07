@@ -149,16 +149,23 @@ if(BuildSPRdVanilla OR BuildJK2SPRdVanilla)
 	source_group("rd-common" FILES ${SPRDVanillaRdCommonFiles})
 	set(SPRDVanillaFiles ${SPRDVanillaFiles} ${SPRDVanillaRdCommonFiles})
 
-	find_package(OpenGL REQUIRED)
-	set(SPRDVanillaRendererIncludeDirectories ${SPRDVanillaRendererIncludeDirectories} ${OPENGL_INCLUDE_DIR})
-	set(SPRDVanillaRendererLibraries ${SPRDVanillaRendererLibraries} ${OPENGL_LIBRARIES})
+	if(ANDROID)
+		# OpenGL ES 1.x Common profile (+ EGL) from the NDK; rd-vanilla is a
+		# fixed-function renderer, so it targets GLES1, not ES2/ES3.
+		set(SPRDVanillaRendererLibraries ${SPRDVanillaRendererLibraries} GLESv1_CM EGL)
+	else()
+		find_package(OpenGL REQUIRED)
+		set(SPRDVanillaRendererIncludeDirectories ${SPRDVanillaRendererIncludeDirectories} ${OPENGL_INCLUDE_DIR})
+		set(SPRDVanillaRendererLibraries ${SPRDVanillaRendererLibraries} ${OPENGL_LIBRARIES})
+	endif()
 
 	set(SPRDVanillaRendererIncludeDirectories ${SPRDVanillaRendererIncludeDirectories} ${OpenJKLibDir})
 
 	function(add_sp_renderer_project ProjectName Label EngineName InstallDir Component)
 		add_library(${ProjectName} SHARED ${SPRDVanillaFiles})
-		if(NOT MSVC)
+		if(NOT MSVC AND NOT ANDROID)
 			# remove "lib" prefix for .so/.dylib files
+			# (Android keeps the "lib" prefix so the .so is packaged into the APK)
 			set_target_properties(${ProjectName} PROPERTIES PREFIX "")
 		endif()
 

@@ -50,7 +50,7 @@ add_library(bundled_minizip STATIC ioapi.c unzip.c)
 # variables are not set in the cache, but instead shadow the variables in the
 # cache.
 set(MINIZIP_LIBRARIES bundled_minizip PARENT_SCOPE)
-set(MINIZIP_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/minizip/include/ PARENT_SCOPE)
+set(MINIZIP_INCLUDE_DIRS ${PROG_SOURCE_DIR}/lib/minizip/include/ PARENT_SCOPE)
 
 mark_as_advanced(MINIZIP_LIBRARIES MINIZIP_INCLUDE_DIRS)
 

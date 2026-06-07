@@ -251,7 +251,12 @@ static	void R_LoadLightmaps( lump_t *l, const char *psMapName, world_t &worldDat
 			va("$%s/lightmap%d", sMapName, worldData.startLightMapIndex+i),
 			image, LIGHTMAP_SIZE, LIGHTMAP_SIZE, GL_RGBA, qfalse, qfalse,
 			(qboolean)(r_ext_compressed_lightmaps->integer != 0),
-			GL_CLAMP);
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+			GL_CLAMP_TO_EDGE
+#else
+			GL_CLAMP
+#endif
+			);
 	}
 
 	if ( r_lightmap->integer == 2 )	{

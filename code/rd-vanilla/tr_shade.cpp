@@ -43,6 +43,7 @@ bool		styleUpdated[MAX_LIGHT_STYLES];
 
 extern bool g_bRenderGlowingObjects;
 
+#if !defined(USE_GLES1) // GLES 1.1 has no immediate mode; draw with glDrawElements
 /*
 ================
 R_ArrayElementDiscrete
@@ -160,6 +161,7 @@ static void R_DrawStripElements( int numIndexes, const glIndex_t *indexes, void 
 
 	qglEnd();
 }
+#endif
 
 /*
 ==================
@@ -171,6 +173,12 @@ without compiled vertex arrays.
 ==================
 */
 static void R_DrawElements( int numIndexes, const glIndex_t *indexes ) {
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode; draw with glDrawElements
+	qglDrawElements( GL_TRIANGLES,
+			numIndexes,
+			GL_INDEX_TYPE,
+			indexes );
+#else
 	int		primitives;
 
 	primitives = r_primitives->integer;
@@ -204,6 +212,7 @@ static void R_DrawElements( int numIndexes, const glIndex_t *indexes ) {
 	}
 
 	// anything else will cause no drawing
+#endif
 }
 
 
@@ -334,7 +343,9 @@ static void DrawTris (shaderCommands_t *input)
 		// tries to do non-xray style showtris
 		GL_State( GLS_POLYMODE_LINE );
 
+#if !defined(USE_GLES1) // GLES 1.1 has no GL_POLYGON_OFFSET_LINE / GL_POLYGON_OFFSET_POINT
 		qglEnable( GL_POLYGON_OFFSET_LINE );
+#endif
 		qglPolygonOffset( -1, -2 );
 
 		qglDisableClientState( GL_COLOR_ARRAY );
@@ -356,7 +367,9 @@ static void DrawTris (shaderCommands_t *input)
 			GLimp_LogComment( "glUnlockArraysEXT\n" );
 		}
 
+#if !defined(USE_GLES1) // GLES 1.1 has no GL_POLYGON_OFFSET_LINE / GL_POLYGON_OFFSET_POINT
 		qglDisable( GL_POLYGON_OFFSET_LINE );
+#endif
 	}
 	else
 	{
@@ -401,6 +414,43 @@ static void DrawNormals (shaderCommands_t *input) {
 	qglDepthRange( 0, 0 );	// never occluded
 	GL_State( GLS_POLYMODE_LINE | GLS_DEPTHMASK_TRUE );
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		const int Numv = input->numVertexes * 2;
+		GLfloat *vs = (GLfloat *)malloc(sizeof(GLfloat) * Numv * 3);
+		int vi = 0;
+		for (i = 0 ; i < input->numVertexes ; i++) {
+			GLfloat *vptr = vs + vi * 2 * 3;
+			memcpy(vptr, input->xyz[i], sizeof(GLfloat) * 3);
+			VectorMA (input->xyz[i], 2, input->normal[i], temp);
+			memcpy(vptr + 3, temp, sizeof(GLfloat) * 3 );
+			vi++;
+		}
+
+		qglVertexPointer(3, GL_FLOAT, 0, vs);
+		qglDrawArrays(GL_TRIANGLE_STRIP, 0, Numv);
+
+		free(vs);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin (GL_LINES);
 	for (i = 0 ; i < input->numVertexes ; i++) {
 		qglVertex3fv (input->xyz[i]);
@@ -408,6 +458,7 @@ static void DrawNormals (shaderCommands_t *input) {
 		qglVertex3fv (temp);
 	}
 	qglEnd ();
+#endif
 
 	qglDepthRange( 0, 1 );
 }

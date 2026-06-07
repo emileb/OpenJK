@@ -1110,12 +1110,47 @@ static void RB_SurfaceBeam( void )
 		break;
 	}
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		const int Numv = (NUM_BEAM_SEGS + 1) * 2;
+		GLfloat vs[Numv * 3];
+		int vi = 0;
+		for ( i = 0; i <= NUM_BEAM_SEGS; i++ ) {
+			GLfloat *vptr = vs + vi * 2 * 3;
+			memcpy(vptr, start_points[ i % NUM_BEAM_SEGS], sizeof(GLfloat) * 3 );
+			memcpy(vptr + 3, end_points[ i % NUM_BEAM_SEGS], sizeof(GLfloat) * 3 );
+			vi++;
+		}
+
+		qglVertexPointer(3, GL_FLOAT, 0, vs);
+		qglDrawArrays(GL_TRIANGLE_STRIP, 0, Numv);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin( GL_TRIANGLE_STRIP );
 	for ( i = 0; i <= NUM_BEAM_SEGS; i++ ) {
 		qglVertex3fv( start_points[ i % NUM_BEAM_SEGS] );
 		qglVertex3fv( end_points[ i % NUM_BEAM_SEGS] );
 	}
 	qglEnd();
+#endif
 }
 
 
@@ -1920,6 +1955,44 @@ static void RB_SurfaceAxis( void ) {
 	GL_Bind( tr.whiteImage );
 	GL_State( GLS_DEFAULT );
 	qglLineWidth( 3 );
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			0.0f,0.0f,0.0f,
+			16.0f,0.0f,0.0f,
+			0.0f,0.0f,0.0f,
+			0.0f,16.0f,0.0f,
+			0.0f,0.0f,0.0f,
+			0.0f,0.0f,16.0f,
+		};
+
+		qglVertexPointer(3, GL_FLOAT, 0, vs);
+		qglColor3f( 1,0,0 );
+		qglDrawArrays(GL_LINES, 0, 2);
+		qglColor3f( 0,1,0 );
+		qglDrawArrays(GL_LINES, 2, 2);
+		qglColor3f( 0,0,1 );
+		qglDrawArrays(GL_LINES, 4, 2);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin( GL_LINES );
 	qglColor3f( 1,0,0 );
 	qglVertex3f( 0,0,0 );
@@ -1931,6 +2004,7 @@ static void RB_SurfaceAxis( void ) {
 	qglVertex3f( 0,0,0 );
 	qglVertex3f( 0,0,16 );
 	qglEnd();
+#endif
 	qglLineWidth( 1 );
 }
 
@@ -1984,6 +2058,7 @@ void RB_SurfaceBad( surfaceType_t *surfType ) {
 }
 
 
+#if !defined(USE_GLES1) // GLES 1.1 glReadPixels cannot read GL_DEPTH_COMPONENT
 /*
 ==================
 RB_TestZFlare
@@ -2034,8 +2109,10 @@ static bool RB_TestZFlare( vec3_t point) {
 	visible = ( -eye[2] - -screenZ ) < 24;
 	return visible;
 }
+#endif
 
 void RB_SurfaceFlare( srfFlare_t *surf ) {
+#if !defined(USE_GLES1) // GLES 1.1 has no display lists
 	vec3_t		left, up;
 	float		radius;
 	byte		color[4];
@@ -2086,13 +2163,16 @@ void RB_SurfaceFlare( srfFlare_t *surf ) {
 	}
 
 	RB_AddQuadStamp( origin, left, up, color );
+#endif
 }
 
 
 void RB_SurfaceDisplayList( srfDisplayList_t *surf ) {
+#if !defined(USE_GLES1) // GLES 1.1 has no display lists
 	// all appropriate state must be set in RB_BeginSurface
 	// this isn't implemented yet...
 	qglCallList( surf->listNum );
+#endif
 }
 
 void RB_SurfaceSkip( void *surf ) {

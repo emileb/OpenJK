@@ -28,7 +28,7 @@ set(JK2SPGameIncludeDirectories
 	"${JK2SPDir}/game"
 	"${SharedDir}"
 	"${GSLIncludeDirectory}"
-	"${CMAKE_BINARY_DIR}/shared"
+	"${PROG_BINARY_DIR}/shared"
 	)
 if(WIN32)
 	set(JK2SPGameLibraries "winmm")
@@ -286,8 +286,9 @@ endif(WIN32)
 
 add_library(${JK2SPGame} SHARED ${JK2SPGameFiles})
 
-if(NOT MSVC)
+if(NOT MSVC AND NOT ANDROID)
 	# remove "lib" prefix for .so/.dylib files
+	# (Android keeps the "lib" prefix so the .so is packaged into the APK)
 	set_target_properties(${JK2SPGame} PROPERTIES PREFIX "")
 endif()
 

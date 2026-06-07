@@ -183,6 +183,7 @@ static float R_BytesPerTex (int format)
 		return glConfig.colorBits/8.0f;
 		break;
 
+#if !defined(USE_GLES1) // these sized/compressed internal formats do not exist on GLES 1.1
 	case GL_RGBA4:
 		//"RGBA4"
 		return 2;
@@ -213,6 +214,7 @@ static float R_BytesPerTex (int format)
 		//"DXT5 "
 		return 1;
 		break;
+#endif
 	default:
 		//"???? "
 		return 4;
@@ -287,6 +289,7 @@ void R_ImageList_f( void ) {
 		case 4:
 			ri.Printf( PRINT_ALL, "RGBA " );
 			break;
+#if !defined(USE_GLES1) // these sized/compressed internal formats do not exist on GLES 1.1
 		case GL_RGBA8:
 			ri.Printf( PRINT_ALL, "RGBA8" );
 			break;
@@ -308,6 +311,11 @@ void R_ImageList_f( void ) {
 		case GL_RGB5:
 			ri.Printf( PRINT_ALL, "RGB5 " );
 			break;
+#else
+		case GL_RGBA:
+			ri.Printf( PRINT_ALL, "RGBA" );
+			break;
+#endif
 		default:
 			ri.Printf( PRINT_ALL, "???? " );
 		}
@@ -316,9 +324,11 @@ void R_ImageList_f( void ) {
 		case GL_REPEAT:
 			ri.Printf( PRINT_ALL, "rept " );
 			break;
+#if !defined(USE_GLES1) // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
 		case GL_CLAMP:
 			ri.Printf( PRINT_ALL, "clmp " );
 			break;
+#endif
 		case GL_CLAMP_TO_EDGE:
 			ri.Printf( PRINT_ALL, "clpE " );
 			break;
@@ -628,6 +638,12 @@ static void Upload32( unsigned *data,
 		    }
 	    }
 
+	// GLES 1.1 requires the internal format to match the source format, and has
+	// none of the sized/compressed formats the desktop path selects below, so
+	// always upload as GL_RGBA. (TODO: use GL_RGB for 3-component textures.)
+#ifdef USE_GLES1
+		*pformat = GL_RGBA;
+#else
 	    // select proper internal format
 	    if ( samples == 3 )
 	    {
@@ -688,6 +704,7 @@ static void Upload32( unsigned *data,
 			    *pformat = 4;
 		    }
 	    }
+#endif
 
 		*pUploadWidth = width;
 		*pUploadHeight = height;
@@ -989,9 +1006,11 @@ image_t *R_CreateImage( const char *name, const byte *pic, int width, int height
 		Com_Error (ERR_DROP, "R_CreateImage: \"%s\" is too long\n", name);
 	}
 
+#if !defined(USE_GLES1) // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
 	if(glConfig.clampToEdgeAvailable && glWrapClampMode == GL_CLAMP) {
 		glWrapClampMode = GL_CLAMP_TO_EDGE;
 	}
+#endif
 
 	if (name[0] == '$')
 	{
@@ -1075,9 +1094,11 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
 	// need to do this here as well as in R_CreateImage, or R_FindImageFile_NoLoad() may complain about
 	//	different clamp parms used...
 	//
+#if !defined(USE_GLES1) // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
 	if(glConfig.clampToEdgeAvailable && glWrapClampMode == GL_CLAMP) {
 		glWrapClampMode = GL_CLAMP_TO_EDGE;
 	}
+#endif
 
 	image = R_FindImageFile_NoLoad(name, mipmap, allowPicmip, allowTC, glWrapClampMode );
 	if (image) {
@@ -1138,7 +1159,11 @@ static void R_CreateDlightImage( void )
 			data[y][x][3] = 255;
 		}
 	}
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+	tr.dlightImage = R_CreateImage("*dlight", (byte *)data, DLIGHT_SIZE, DLIGHT_SIZE, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP_TO_EDGE );
+#else
 	tr.dlightImage = R_CreateImage("*dlight", (byte *)data, DLIGHT_SIZE, DLIGHT_SIZE, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP );
+#endif
 #else
 	int		width, height;
 	byte	*pic;
@@ -1146,7 +1171,11 @@ static void R_CreateDlightImage( void )
 	R_LoadImage("gfx/2d/dlight", &pic, &width, &height);
 	if (pic)
 	{
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+		tr.dlightImage = R_CreateImage("*dlight", pic, width, height, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP_TO_EDGE );
+#else
 		tr.dlightImage = R_CreateImage("*dlight", pic, width, height, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP );
+#endif
 		R_Free(pic);
 	}
 	else
@@ -1174,7 +1203,11 @@ static void R_CreateDlightImage( void )
 				data[y][x][3] = 255;
 			}
 		}
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+		tr.dlightImage = R_CreateImage("*dlight", (byte *)data, DLIGHT_SIZE, DLIGHT_SIZE, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP_TO_EDGE );
+#else
 		tr.dlightImage = R_CreateImage("*dlight", (byte *)data, DLIGHT_SIZE, DLIGHT_SIZE, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP );
+#endif
 	}
 #endif
 }
@@ -1262,15 +1295,21 @@ static void R_CreateFogImage( void ) {
 	// standard openGL clamping doesn't really do what we want -- it includes
 	// the border color at the edges.  OpenGL 1.2 has clamp-to-edge, which does
 	// what we want.
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+	tr.fogImage = R_CreateImage("*fog", (byte *)data, FOG_S, FOG_T, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP_TO_EDGE);
+#else
 	tr.fogImage = R_CreateImage("*fog", (byte *)data, FOG_S, FOG_T, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP);
+#endif
 	R_Free( data );
 
+#if !defined(USE_GLES1) // GLES 1.1 has no texture border colour (GL_TEXTURE_BORDER_COLOR)
 	borderColor[0] = 1.0;
 	borderColor[1] = 1.0;
 	borderColor[2] = 1.0;
 	borderColor[3] = 1;
 
 	qglTexParameterfv( GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor );
+#endif
 }
 
 /*
@@ -1335,7 +1374,11 @@ void R_CreateBuiltinImages( void ) {
 	qglDisable( GL_TEXTURE_2D );
 	qglEnable( GL_TEXTURE_RECTANGLE_ARB );
 	qglBindTexture( GL_TEXTURE_RECTANGLE_ARB, tr.screenGlow );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 float internal format; use 8-bit RGBA
+	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+#else
 	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA16, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGB, GL_FLOAT, 0 );
+#endif
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
@@ -1344,7 +1387,11 @@ void R_CreateBuiltinImages( void ) {
 	// Create the scene image. - AReis
 	tr.sceneImage = 1024 + giTextureBindNum++;
 	qglBindTexture( GL_TEXTURE_RECTANGLE_ARB, tr.sceneImage );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 float internal format; use 8-bit RGBA
+	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+#else
 	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA16, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGB, GL_FLOAT, 0 );
+#endif
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
@@ -1361,7 +1408,11 @@ void R_CreateBuiltinImages( void ) {
 	}
 	tr.blurImage = 1024 + giTextureBindNum++;
 	qglBindTexture( GL_TEXTURE_RECTANGLE_ARB, tr.blurImage );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 float internal format; use 8-bit RGBA
+	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, r_DynamicGlowWidth->integer, r_DynamicGlowHeight->integer, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+#else
 	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA16, r_DynamicGlowWidth->integer, r_DynamicGlowHeight->integer, 0, GL_RGB, GL_FLOAT, 0 );
+#endif
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
@@ -1387,7 +1438,11 @@ void R_CreateBuiltinImages( void ) {
 	// scratchimage is usually used for cinematic drawing
 	for(x=0;x<NUM_SCRATCH_IMAGES;x++) {
 		// scratchimage is usually used for cinematic drawing
+#ifdef USE_GLES1 // GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE
+		tr.scratchImage[x] = R_CreateImage(va("*scratch%d",x), (byte *)data, DEFAULT_SIZE, DEFAULT_SIZE, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP_TO_EDGE);
+#else
 		tr.scratchImage[x] = R_CreateImage(va("*scratch%d",x), (byte *)data, DEFAULT_SIZE, DEFAULT_SIZE, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP);
+#endif
 	}
 
 	R_CreateDlightImage();

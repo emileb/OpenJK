@@ -457,6 +457,7 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 	}
 	cmd->commandId = RC_DRAW_BUFFER;
 
+#if !defined(USE_GLES1) // GLES 1.1 has no quad-buffered stereo
 	if ( glConfig.stereoEnabled ) {
 		if ( stereoFrame == STEREO_LEFT ) {
 			cmd->buffer = (int)GL_BACK_LEFT;
@@ -473,9 +474,12 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 //			cmd->buffer = (int)GL_FRONT;
 //		} else
 		{
+#endif
 			cmd->buffer = (int)GL_BACK;
+#if !defined(USE_GLES1) // GLES 1.1 has no quad-buffered stereo
 		}
 	}
+#endif
 }
 
 

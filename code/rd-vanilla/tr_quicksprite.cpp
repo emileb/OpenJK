@@ -118,7 +118,12 @@ void CQuickSpriteSystem::Flush(void)
 		GLimp_LogComment( "glLockArraysEXT\n" );
 	}
 
+#ifdef USE_GLES1 // GLES 1.1 has no GL_QUADS; draw the quads as triangles instead
+	for(int i = 0; i < mNextVert; i += 4)
+		qglDrawArrays(GL_TRIANGLE_FAN, i, 4);
+#else
 	qglDrawArrays(GL_QUADS, 0, mNextVert);
+#endif
 
 	backEnd.pc.c_vertexes += mNextVert;
 	backEnd.pc.c_indexes += mNextVert;
@@ -150,7 +155,12 @@ void CQuickSpriteSystem::Flush(void)
 
 //		qglVertexPointer (3, GL_FLOAT, 16, mVerts);	// Done above
 
+#ifdef USE_GLES1 // GLES 1.1 has no GL_QUADS; draw the quads as triangles instead
+		for(int i = 0; i < mNextVert; i += 4)
+			qglDrawArrays(GL_TRIANGLE_FAN, i, 4);
+#else
 		qglDrawArrays(GL_QUADS, 0, mNextVert);
+#endif
 
 		// Second pass from fog
 		backEnd.pc.c_totalIndexes += mNextVert;

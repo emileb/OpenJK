@@ -27,7 +27,7 @@ set(SPGameIncludeDirectories
 	${SPDir}
 	"${SPDir}/game"
 	"${GSLIncludeDirectory}"
-	"${CMAKE_BINARY_DIR}/shared"
+	"${PROG_BINARY_DIR}/shared"
 	)
 
 if(WIN32)
@@ -378,8 +378,9 @@ add_library(${SPGame} SHARED ${SPGameFiles})
 # Hide symbols not explicitly marked public.
 set_property(TARGET ${SPGame} APPEND PROPERTY COMPILE_OPTIONS ${OPENJK_VISIBILITY_FLAGS})
 
-if(NOT MSVC)
+if(NOT MSVC AND NOT ANDROID)
 	# remove "lib" prefix for .so/.dylib files
+	# (Android keeps the "lib" prefix so the .so is packaged into the APK)
 	set_target_properties(${SPGame} PROPERTIES PREFIX "")
 endif()
 

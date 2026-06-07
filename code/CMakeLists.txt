@@ -41,13 +41,17 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 	set(SPEngineIncludeDirectories
 		${SPEngineIncludeDirectories}
 		${SharedDir}
-		${CMAKE_BINARY_DIR}/shared
+		${PROG_BINARY_DIR}/shared
 		${SPDir}
 		"${GSLIncludeDirectory}")
 
 	#    Dependencies
 
-	if (NOT WIN32)
+	if (ANDROID)
+		# OpenGL ES 1.x Common profile (+ EGL); rd-vanilla is a fixed-function
+		# renderer, so it targets GLES1, not ES2/ES3. Provided by the NDK.
+		set(SPEngineLibraries ${SPEngineLibraries} GLESv1_CM EGL)
+	elseif (NOT WIN32)
 		# OpenGL
 		find_package(OpenGL REQUIRED)
 		set(SPEngineIncludeDirectories ${SPEngineIncludeDirectories} ${OPENGL_INCLUDE_DIR})
@@ -78,7 +82,22 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 		set(SPEngineFiles ${SPEngineFiles} ${SPEngineEAXFiles})
 	endif()
 
-	if(UseInternalSDL2)
+	if(ANDROID)
+		# SDL2, SDL2_image and the touch controls library are imported by the
+		# top-level Alpha wrapper CMakeLists; the OpenTouch C glue lives in CLIBS_DIR.
+		set(SPEngineIncludeDirectories
+			${SPEngineIncludeDirectories}
+			${SDL2_ANDROID_INCLUDE_DIR}
+			${SDL2_IMAGE_ANDROID_INCLUDE_DIR}
+			${CLIBS_DIR}
+			${CLIBS_DIR}/alpha
+			${TOUCH_CONTROLS_DIR}
+			)
+		set(SPEngineLibraries
+			${SPEngineLibraries}
+			SDL2 SDL2_image touchcontrols log
+			)
+	elseif(UseInternalSDL2)
 		if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 			set(SPEngineLibraries
 				${SPEngineLibraries}
@@ -365,6 +384,23 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 	source_group("sys" FILES ${SPEngineSysFiles})
 	set(SPEngineFiles ${SPEngineFiles} ${SPEngineSysFiles})
 
+	if(ANDROID)
+		# OpenTouch Android glue (JNI bridge + on-screen touch controls), shared by
+		# every engine in Alpha Touch. The OpenJK-specific mobile entry point and
+		# touch_interface still need to be authored (see TheForceEngine's
+		# TheForceEngine/mobile/game_interface.cpp + Clibs_OpenTouch/alpha/touch_interface_tfe.cpp
+		# for a template) and added below.
+		set(SPEngineOpenTouchFiles
+			"${CLIBS_DIR}/alpha/android_jni.cpp"
+			"${CLIBS_DIR}/touch_interface_base.cpp"
+			"${CLIBS_DIR}/LogWritter.c"
+			"${CLIBS_DIR}/fts.c"
+			"${CLIBS_DIR}/rand.c"
+			)
+		source_group("opentouch" FILES ${SPEngineOpenTouchFiles})
+		set(SPEngineFiles ${SPEngineFiles} ${SPEngineOpenTouchFiles})
+	endif()
+
     # Transparently use our bundled minizip.
     list(APPEND SPEngineIncludeDirectories ${MINIZIP_INCLUDE_DIRS})
     list(APPEND SPEngineLibraries          ${MINIZIP_LIBRARIES})
@@ -396,6 +432,8 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 						)
 				endif()
 			endif()
+		elseif(ANDROID)
+			add_library(${ProjectName} SHARED ${SPEngineFiles})
 		else(WIN32)
 			if(MakeApplicationBundles)
 				set_source_files_properties(${SPDirName}/macosx/OpenJK.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
@@ -414,7 +452,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 			install(CODE "
 				include(BundleUtilities)
 				set(BU_CHMOD_BUNDLE_ITEMS ON)
-				fixup_bundle(\"${CMAKE_BINARY_DIR}/${ProjectName}.app\" \"\" \"\")
+				fixup_bundle(\"${PROG_BINARY_DIR}/${ProjectName}.app\" \"\" \"\")
 				"
 				COMPONENT Runtime)
 			install(TARGETS ${ProjectName}

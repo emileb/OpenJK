@@ -27,6 +27,11 @@ if(WIN32)
 	include_directories(../zlib/include/)
 endif()
 
+if(ANDROID)
+	# Disable libpng NEON intrinsics so it builds on both arm64 and armeabi-v7a.
+	add_definitions(-DPNG_ARM_NEON_OPT=0)
+endif()
+
 if(MSVC)
 	add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif(MSVC)
@@ -59,7 +64,7 @@ add_library(bundled_libpng STATIC include/png.h
 # cache.  (These are the same variables exported by the standard CMake FindPNG
 # module).
 set(PNG_LIBRARIES bundled_libpng PARENT_SCOPE)
-set(PNG_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/libpng/include/ PARENT_SCOPE)
+set(PNG_INCLUDE_DIRS ${PROG_SOURCE_DIR}/lib/libpng/include/ PARENT_SCOPE)
 
 mark_as_advanced(PNG_LIBRARIES PNG_INCLUDE_DIRS)
 

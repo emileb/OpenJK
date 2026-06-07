@@ -18,15 +18,34 @@
 
 # The <min>...<policy_max> syntax is needed to remain compatible with 3.1, but also newer versions that dropped 3.1 compatibility
 # More info here: https://cmake.org/cmake/help/latest/command/cmake_minimum_required.html
-cmake_minimum_required(VERSION 3.1...3.31)
+cmake_minimum_required(VERSION 3.12...3.31)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9" CACHE STRING "Minimum OS X deployment version")
 
 set(InOpenJK ON)
+
+# build type
+if(NOT CMAKE_BUILD_TYPE)
+	set(CMAKE_BUILD_TYPE "Release")
+endif()
+
+if(ANDROID)
+	# Render with OpenGL ES 1.x instead of desktop OpenGL (rd-vanilla #ifdef USE_GLES1).
+	add_definitions(-DUSE_GLES1)
+	# Silence noisy NDK/clang warnings in the legacy id Tech 3 codebase.
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-non-c-typedef-for-linkage -Wno-deprecated-non-prototype")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-non-c-typedef-for-linkage -Wno-deprecated-non-prototype")
+endif()
 
 set(ProjectName "OpenJK" CACHE STRING "Project Name")
 project(${ProjectName})
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# OpenJK may be the top-level project (desktop) or pulled in via add_subdirectory
+# by the Alpha Touch wrapper (Android). Use these instead of CMAKE_SOURCE_DIR /
+# CMAKE_BINARY_DIR so paths stay anchored to the OpenJK root in both cases.
+set(PROG_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(PROG_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
 #=============================================================================
 #
@@ -35,21 +54,31 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 #=============================================================================
 option(BuildPortableVersion "Build portable version (does not read or write files from your user/home directory" OFF)
 
-option(BuildMPEngine "Whether to create projects for the MP client (openjk.exe)" ON)
-option(BuildMPRdVanilla "Whether to create projects for the MP default renderer (rd-vanilla_x86.dll)" ON)
-option(BuildMPDed "Whether to create projects for the MP dedicated server (openjkded.exe)" ON)
-option(BuildMPGame "Whether to create projects for the MP server-side gamecode (jampgamex86.dll)" ON)
-option(BuildMPCGame "Whether to create projects for the MP clientside gamecode (cgamex86.dll)" ON)
-option(BuildMPUI "Whether to create projects for the MP UI code (uix86.dll)" ON)
-option(BuildMPRend2 "Whether to create projects for the EXPERIMENTAL MP rend2 renderer (rd-rend2_x86.dll)" ON)
+# Android only ships the single-player engines; multiplayer needs networking/server
+# bits that are not part of this port, so default the MP projects off there.
+if(ANDROID)
+	set(BuildMPDefault OFF)
+	set(BuildJK2SPDefault ON)
+else()
+	set(BuildMPDefault ON)
+	set(BuildJK2SPDefault OFF)
+endif()
+
+option(BuildMPEngine "Whether to create projects for the MP client (openjk.exe)" ${BuildMPDefault})
+option(BuildMPRdVanilla "Whether to create projects for the MP default renderer (rd-vanilla_x86.dll)" ${BuildMPDefault})
+option(BuildMPDed "Whether to create projects for the MP dedicated server (openjkded.exe)" ${BuildMPDefault})
+option(BuildMPGame "Whether to create projects for the MP server-side gamecode (jampgamex86.dll)" ${BuildMPDefault})
+option(BuildMPCGame "Whether to create projects for the MP clientside gamecode (cgamex86.dll)" ${BuildMPDefault})
+option(BuildMPUI "Whether to create projects for the MP UI code (uix86.dll)" ${BuildMPDefault})
+option(BuildMPRend2 "Whether to create projects for the EXPERIMENTAL MP rend2 renderer (rd-rend2_x86.dll)" ${BuildMPDefault})
 
 option(BuildSPEngine "Whether to create projects for the SP engine (openjk_sp.exe)" ON)
 option(BuildSPGame "Whether to create projects for the SP gamecode (jagamex86.dll)" ON)
 option(BuildSPRdVanilla "Whether to create projects for the SP default renderer (rdsp-vanilla_x86.dll)" ON)
 
-option(BuildJK2SPEngine "Whether to create projects for the jk2 SP engine (openjo_sp.exe)" OFF)
-option(BuildJK2SPGame "Whether to create projects for the jk2 sp gamecode mod (jk2gamex86.dll)" OFF)
-option(BuildJK2SPRdVanilla "Whether to create projects for the jk2 sp renderer (rdjosp-vanilla_x86.dll)" OFF)
+option(BuildJK2SPEngine "Whether to create projects for the jk2 SP engine (openjo_sp.exe)" ${BuildJK2SPDefault})
+option(BuildJK2SPGame "Whether to create projects for the jk2 sp gamecode mod (jk2gamex86.dll)" ${BuildJK2SPDefault})
+option(BuildJK2SPRdVanilla "Whether to create projects for the jk2 sp renderer (rdjosp-vanilla_x86.dll)" ${BuildJK2SPDefault})
 
 option(BuildTests "Whether to build automatic unit tests (requires Boost)" OFF)
 option(UseAddressSanitizer "Whether to enable runtime address sanitizer" OFF)
@@ -69,6 +98,12 @@ set(UseInternalZlibDefault   OFF)
 set(UseInternalPNGDefault    OFF)
 set(UseInternalJPEGDefault   OFF)
 set(UseInternalSDL2Default   OFF)
+
+if(ANDROID)
+  # The NDK ships zlib (and we provide SDL2 ourselves), but not libpng/libjpeg.
+  set(UseInternalPNGDefault    ON)
+  set(UseInternalJPEGDefault   ON)
+endif()
 
 if(UseInternalLibs OR WIN32)
   set(UseInternalOpenALDefault ON)
@@ -99,13 +134,13 @@ endif()
 # Custom CMake Modules needed
 #
 #=============================================================================
-list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_SOURCE_DIR}/cmake/Modules")
+list(INSERT CMAKE_MODULE_PATH 0 "${PROG_SOURCE_DIR}/cmake/Modules")
 
 if(CMAKE_EXPORT_COMPILE_COMMANDS)
 	add_custom_target(
 		copy-compile-commands ALL
 		${CMAKE_COMMAND} -E copy_if_different
-		${CMAKE_BINARY_DIR}/compile_commands.json
+		${PROG_BINARY_DIR}/compile_commands.json
 		${CMAKE_CURRENT_LIST_DIR})
 endif()
 
@@ -163,19 +198,37 @@ endif()
 # Binary names
 #
 #=============================================================================
-set(SPEngine "openjk_sp.${Architecture}")
-set(SPGame "jagame${Architecture}")
-set(SPRDVanillaRenderer "rdsp-vanilla_${Architecture}")
-set(MPEngine "openjk.${Architecture}")
-set(MPVanillaRenderer "rd-vanilla_${Architecture}")
-set(MPDed "openjkded.${Architecture}")
-set(MPGame "jampgame${Architecture}")
-set(MPCGame "cgame${Architecture}")
-set(MPUI "ui${Architecture}")
-set(MPRend2 "rd-rend2_${Architecture}")
-set(JK2SPEngine "openjo_sp.${Architecture}")
-set(JK2SPGame "jospgame${Architecture}")
-set(JK2SPVanillaRenderer "rdjosp-vanilla_${Architecture}")
+if(ANDROID)
+	# On Android the loader appends ARCH_STRING + ".so" itself and libraries keep
+	# their "lib" prefix, so build the modules without the architecture suffix.
+	set(SPEngine "openjk_sp")
+	set(SPGame "jagame")
+	set(SPRDVanillaRenderer "rdsp-vanilla")
+	set(MPEngine "openjk")
+	set(MPVanillaRenderer "rd-vanilla")
+	set(MPDed "openjkded")
+	set(MPGame "jampgame")
+	set(MPCGame "cgame")
+	set(MPUI "ui")
+	set(MPRend2 "rd-rend2")
+	set(JK2SPEngine "openjo_sp")
+	set(JK2SPGame "jospgame")
+	set(JK2SPVanillaRenderer "rdjosp-vanilla")
+else()
+	set(SPEngine "openjk_sp.${Architecture}")
+	set(SPGame "jagame${Architecture}")
+	set(SPRDVanillaRenderer "rdsp-vanilla_${Architecture}")
+	set(MPEngine "openjk.${Architecture}")
+	set(MPVanillaRenderer "rd-vanilla_${Architecture}")
+	set(MPDed "openjkded.${Architecture}")
+	set(MPGame "jampgame${Architecture}")
+	set(MPCGame "cgame${Architecture}")
+	set(MPUI "ui${Architecture}")
+	set(MPRend2 "rd-rend2_${Architecture}")
+	set(JK2SPEngine "openjo_sp.${Architecture}")
+	set(JK2SPGame "jospgame${Architecture}")
+	set(JK2SPVanillaRenderer "rdjosp-vanilla_${Architecture}")
+endif()
 set(AssetsPk3 "openjk-${Architecture}.pk3")
 # Library names
 set(MPBotLib "botlib")
@@ -186,11 +239,11 @@ set(SharedLib "shared")
 # Paths
 #
 #=============================================================================
-set(SPDir "${CMAKE_SOURCE_DIR}/code")
-set(MPDir "${CMAKE_SOURCE_DIR}/codemp")
-set(JK2SPDir "${CMAKE_SOURCE_DIR}/codeJK2")
-set(SharedDir ${CMAKE_SOURCE_DIR}/shared)
-set(OpenJKLibDir "${CMAKE_SOURCE_DIR}/lib")
+set(SPDir "${PROG_SOURCE_DIR}/code")
+set(MPDir "${PROG_SOURCE_DIR}/codemp")
+set(JK2SPDir "${PROG_SOURCE_DIR}/codeJK2")
+set(SharedDir ${PROG_SOURCE_DIR}/shared)
+set(OpenJKLibDir "${PROG_SOURCE_DIR}/lib")
 set(GSLIncludeDirectory "${OpenJKLibDir}/gsl-lite/include")
 
 include(InstallConfig)
@@ -350,7 +403,7 @@ endif()
 # ideally we would separate the hash suffix into its own variable, but sed is not available everywhere
 execute_process(
 	COMMAND "git" "describe" "--tag"
-	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+	WORKING_DIRECTORY ${PROG_SOURCE_DIR}
 	OUTPUT_VARIABLE GIT_TAG
 	RESULT_VARIABLE GIT_TAG_ERROR
 	OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -375,7 +428,7 @@ set(SharedCommonFiles
 	"${SharedDir}/qcommon/q_string.h"
 	"${SharedDir}/qcommon/q_string.c"
 	"${SharedDir}/qcommon/q_platform.h"
-	"${CMAKE_BINARY_DIR}/shared/qcommon/q_version.h"
+	"${PROG_BINARY_DIR}/shared/qcommon/q_version.h"
 	)
 set(SharedCommonSafeFiles
 	"${SharedDir}/qcommon/safe/gsl.h"

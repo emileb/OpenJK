@@ -237,7 +237,12 @@ void RE_SetLightStyle(int style, int color);
 
 void R_Splash()
 {
+	// GLES 1.1 has no GL_CLAMP wrap mode, only GL_CLAMP_TO_EDGE.
+#ifdef USE_GLES1
+	image_t *pImage = R_FindImageFile( "menu/splash", qfalse, qfalse, qfalse, GL_CLAMP_TO_EDGE);
+#else
 	image_t *pImage = R_FindImageFile( "menu/splash", qfalse, qfalse, qfalse, GL_CLAMP);
+#endif
 
 	if ( !pImage )
 	{
@@ -260,6 +265,44 @@ void R_Splash()
 		const float y1 = 240 - height / 2;
 		const float y2 = 240 + height / 2;
 
+	// GLES 1.1 has no immediate mode (glBegin/glEnd); draw the splash quad with
+	// a vertex array instead. Save and restore the client array enables so this
+	// doesn't disturb surrounding state.
+#ifdef USE_GLES1
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			 0.0f,  0.0f,
+			x1, y1,
+			 1.0f ,  0.0f,
+			x2, y1,
+			 0.0f, 1.0f,
+			x1, y2,
+			 1.0f, 1.0f,
+			x2, y2,
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 		qglBegin (GL_TRIANGLE_STRIP);
 			qglTexCoord2f( 0,  0 );
 			qglVertex2f(x1, y1);
@@ -270,6 +313,7 @@ void R_Splash()
 			qglTexCoord2f( 1, 1 );
 			qglVertex2f(x2, y2);
 		qglEnd();
+#endif
 	}
 
 	ri.WIN_Present( &window );
@@ -387,6 +431,14 @@ static void GLW_InitTextureCompression( void )
 	}
 }
 
+// GLES 1.1 has glMultiTexCoord4f but not the 2-component glMultiTexCoord2f;
+// provide it so the qglMultiTexCoord2fARB pointer below has something to bind to.
+#ifdef USE_GLES1
+void glMultiTexCoord2fARB( GLenum texture, GLfloat s, GLfloat t )
+{
+	glMultiTexCoord4f(texture, s, t, 0, 1);
+}
+#endif
 /*
 ===============
 GLimp_InitExtensions
@@ -463,6 +515,47 @@ static void GLimp_InitExtensions( void )
 	qglMultiTexCoord2fARB = NULL;
 	qglActiveTextureARB = NULL;
 	qglClientActiveTextureARB = NULL;
+	// Multitexture is core in GLES 1.1, so there is no GL_ARB_multitexture
+	// extension string to query; detect it from the available texture-unit count
+	// and bind the qgl*ARB pointers to the core entry points.
+#ifdef USE_GLES1
+    GLint numTextureUnits;
+    qglGetIntegerv( GL_MAX_TEXTURE_UNITS, &numTextureUnits );
+	if ( numTextureUnits > 1 )
+	{
+		if ( r_ext_multitexture->integer )
+		{
+			qglMultiTexCoord2fARB = glMultiTexCoord2fARB;
+			qglActiveTextureARB = glActiveTexture;
+			qglClientActiveTextureARB = glClientActiveTexture;
+
+			if ( qglActiveTextureARB )
+			{
+				qglGetIntegerv( GL_MAX_TEXTURE_UNITS_ARB, &glConfig.maxActiveTextures );
+
+				if ( glConfig.maxActiveTextures > 1 )
+				{
+					Com_Printf ("...using GL_ARB_multitexture\n" );
+				}
+				else
+				{
+					qglMultiTexCoord2fARB = NULL;
+					qglActiveTextureARB = NULL;
+					qglClientActiveTextureARB = NULL;
+					Com_Printf ("...not using GL_ARB_multitexture, < 2 texture units\n" );
+				}
+			}
+		}
+		else
+		{
+			Com_Printf ("...ignoring GL_ARB_multitexture\n" );
+		}
+	}
+	else
+	{
+		Com_Printf ("...GL_ARB_multitexture not found\n" );
+	}
+#else
 	if ( ri.GL_ExtensionSupported( "GL_ARB_multitexture" ) )
 	{
 		if ( r_ext_multitexture->integer )
@@ -497,6 +590,7 @@ static void GLimp_InitExtensions( void )
 	{
 		Com_Printf ("...GL_ARB_multitexture not found\n" );
 	}
+#endif
 
 	// GL_EXT_compiled_vertex_array
 	qglLockArraysEXT = NULL;
@@ -679,6 +773,11 @@ static void GLimp_InitExtensions( void )
 	{
 		glConfig.doStencilShadowsInOneDrawcall = qtrue;
 	}
+	// FIXME: glStencilOpSeparate crashes on GLES 1.1 here, so force the slower
+	// two-pass stencil shadow path instead of the single-drawcall one.
+#ifdef USE_GLES1
+	glConfig.doStencilShadowsInOneDrawcall = qfalse;
+#endif
 #else
 	glConfig.doStencilShadowsInOneDrawcall = qtrue;
 #endif
@@ -708,6 +807,13 @@ static void InitOpenGL( void )
 	if ( glConfig.vidWidth == 0 )
 	{
 		windowDesc_t windowDesc = { GRAPHICS_API_OPENGL };
+		// Ask the SDL window backend for an OpenGL ES 1.1 context (created via
+		// EGL on Android). Without this it would default to desktop OpenGL.
+#ifdef USE_GLES1
+		windowDesc.gl.majorVersion = 1;
+		windowDesc.gl.minorVersion = 1;
+		windowDesc.gl.profile = GLPROFILE_ES;
+#endif
 		memset(&glConfig, 0, sizeof(glConfig));
 
 		window = ri.WIN_Init(&windowDesc, &glConfig);
@@ -813,7 +919,13 @@ byte *RB_ReadPixels(int x, int y, int width, int height, size_t *offset, int *pa
 	int padwidth, linelen;
 	GLint packAlign;
 
+	// GLES 1.1 reads back tightly packed RGBA (see below), so the destination
+	// rows are byte-aligned; GL_PACK_ALIGNMENT can't be queried the same way.
+#ifdef USE_GLES1
+	packAlign = 1;
+#else
 	qglGetIntegerv(GL_PACK_ALIGNMENT, &packAlign);
+#endif
 
 	linelen = width * 3;
 	padwidth = PAD(linelen, packAlign);
@@ -822,7 +934,24 @@ byte *RB_ReadPixels(int x, int y, int width, int height, size_t *offset, int *pa
 	buffer = (byte *) R_Malloc(padwidth * height + *offset + packAlign - 1, TAG_TEMP_WORKSPACE, qfalse);
 
 	bufstart = (byte *)PADP((intptr_t) buffer + *offset, packAlign);
+	// GLES 1.1 glReadPixels only guarantees GL_RGBA; read into a temporary RGBA
+	// buffer and pack it down to the RGB layout the caller expects.
+#ifdef USE_GLES1
+	byte *pixelBuf = (byte *)malloc(width * height * 4);
+	qglReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixelBuf);
+	for(int h = 0; h < height; h++)
+	{
+		for(int w = 0; w < width; w++)
+		{
+			const byte *pixelSrc = pixelBuf + (h * width + w) * 4;
+			byte *pixelDst = bufstart + (h * width + w) * 3;
+			memcpy(pixelDst, pixelSrc, sizeof(byte) * 3);
+		}
+	}
+	free(pixelBuf);
+#else
 	qglReadPixels(x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, bufstart);
+#endif
 
 	*offset = bufstart - buffer;
 	*padlen = padwidth - linelen;
@@ -1168,7 +1297,11 @@ void GL_SetDefaultState( void )
 	//
 	glState.glStateBits = GLS_DEPTHTEST_DISABLE | GLS_DEPTHMASK_TRUE;
 
+	// GLES 1.1 has no glPolygonMode; polygons are always filled, which is the
+	// default we'd be setting here anyway.
+#if !defined(USE_GLES1)
 	qglPolygonMode (GL_FRONT_AND_BACK, GL_FILL);
+#endif
 	qglDepthMask( GL_TRUE );
 	qglDisable( GL_DEPTH_TEST );
 	qglEnable( GL_SCISSOR_TEST );
@@ -1791,6 +1924,10 @@ void RE_Shutdown( qboolean destroyWindow, qboolean restarting ) {
 
 	if ( r_DynamicGlow && r_DynamicGlow->integer )
 	{
+		// The dynamic glow shaders rely on ARB vertex/fragment programs and
+		// display lists, none of which exist on GLES 1.1, so there is nothing
+		// to release there.
+#if !defined(USE_GLES1)
 		// Release the Glow Vertex Shader.
 		if ( tr.glowVShader )
 		{
@@ -1811,6 +1948,7 @@ void RE_Shutdown( qboolean destroyWindow, qboolean restarting ) {
 				qglDeleteProgramsARB( 1, &tr.glowPShader );
 			}
 		}
+#endif
 
 		// Release the scene glow texture.
 		qglDeleteTextures( 1, &tr.screenGlow );

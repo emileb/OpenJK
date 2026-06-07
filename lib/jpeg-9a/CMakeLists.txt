@@ -83,7 +83,7 @@ add_library(bundled_libjpeg STATIC include/jconfig.h
 # cache.  (These are the same variables exported by the standard CMake FindJPEG
 # module).
 set(JPEG_LIBRARIES bundled_libjpeg PARENT_SCOPE)
-set(JPEG_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/lib/jpeg-9a/include/ PARENT_SCOPE)
+set(JPEG_INCLUDE_DIR ${PROG_SOURCE_DIR}/lib/jpeg-9a/include/ PARENT_SCOPE)
 
 mark_as_advanced(JPEG_LIBRARIES JPEG_INCLUDE_DIR)
 

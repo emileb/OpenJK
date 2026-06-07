@@ -331,6 +331,7 @@ void GL_State( uint32_t stateBits )
 		}
 	}
 
+#if !defined(USE_GLES1) // GLES 1.1 has no glPolygonMode (polygons are always filled)
 	//
 	// fill/line mode
 	//
@@ -345,6 +346,7 @@ void GL_State( uint32_t stateBits )
 			qglPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 		}
 	}
+#endif
 
 	//
 	// depthtest
@@ -548,7 +550,11 @@ static void RB_BeginDrawingView (void) {
 	// clip to the plane of the portal
 	if ( backEnd.viewParms.isPortal ) {
 		float	plane[4];
+#ifdef USE_GLES1 // GLES 1.1 clip planes use GLfloat (glClipPlanef)
+		GLfloat plane2[4];
+#else
 		double	plane2[4];
+#endif
 
 		plane[0] = backEnd.viewParms.portalPlane.normal[0];
 		plane[1] = backEnd.viewParms.portalPlane.normal[1];
@@ -922,7 +928,11 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 					}
 
 					//now copy a portion of the screen to this texture
+#ifdef USE_GLES1 // glCopyTexImage2D has no GL_RGBA16 internal format on GLES 1.1; use GL_RGBA
+					qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cX, cY, rad, rad, 0);
+#else
 					qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16, cX, cY, rad, rad, 0);
+#endif
 
 					lastPostEnt = pRender->entNum;
 				}
@@ -1403,7 +1413,9 @@ const void	*RB_DrawBuffer( const void *data ) {
 
 	cmd = (const drawBufferCommand_t *)data;
 
+#if !defined(USE_GLES1) // GLES 1.1 has no glDrawBuffer
 	qglDrawBuffer( cmd->buffer );
+#endif
 
 		// clear screen for debugging
 	if (!( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) && tr.world && tr.refdef.rdflags & RDF_doLAGoggles)
@@ -1502,6 +1514,41 @@ void RB_ShowImages( void ) {
 		}
 
 		GL_Bind( image );
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			0.0f, 0.0f,
+			x, y,
+			1.0f, 0.0f,
+			x + w, y,
+			1.0f, 1.0f,
+			x + w, y + h,
+			0.0f, 1.0f,
+			x, y + h,
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 		qglBegin (GL_QUADS);
 			qglTexCoord2f( 0, 0 );
 			qglVertex2f( x, y );
@@ -1512,6 +1559,7 @@ void RB_ShowImages( void ) {
 			qglTexCoord2f( 0, 1 );
 			qglVertex2f( x, y + h );
 		qglEnd();
+#endif
 		i++;
 	}
 
@@ -1546,6 +1594,7 @@ const void	*RB_SwapBuffers( const void *data ) {
 
 	// we measure overdraw by reading back the stencil buffer and
 	// counting up the number of increments that have happened
+#if !defined(USE_GLES1) // GLES 1.1 glReadPixels cannot read GL_STENCIL_INDEX
 	if ( r_measureOverdraw->integer ) {
 		int i;
 		long sum = 0;
@@ -1561,6 +1610,7 @@ const void	*RB_SwapBuffers( const void *data ) {
 		backEnd.pc.c_overDraw += sum;
 		R_Free( stencilReadback );
 	}
+#endif
 
     if ( !glState.finishCalled ) {
         qglFinish();
@@ -1654,6 +1704,7 @@ GLuint g_uiCurrentPixelShaderType = 0x0;
 // Begin using a Pixel Shader.
 void BeginPixelShader( GLuint uiType, GLuint uiID )
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no ARB vertex/fragment programs
 	switch ( uiType )
 	{
 		// Using Register Combiners, so call the Display List that stores it.
@@ -1685,6 +1736,7 @@ void BeginPixelShader( GLuint uiType, GLuint uiID )
 		}
 		return;
 	}
+#endif
 }
 
 // Stop using a Pixel Shader and return states to normal.
@@ -1702,6 +1754,7 @@ extern bool g_bTextureRectangleHack;
 
 static inline void RB_BlurGlowTexture()
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no ARB shaders or immediate mode
 	qglDisable (GL_CLIP_PLANE0);
 	GL_Cull( CT_TWO_SIDED );
 
@@ -1869,11 +1922,13 @@ static inline void RB_BlurGlowTexture()
 
 	qglDisable( GL_BLEND );
 	glState.currenttmu = 0;	//this matches the last one we activated
+#endif
 }
 
 // Draw the glow blur over the screen additively.
 static inline void RB_DrawGlowOverlay()
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no immediate mode or GL_TEXTURE_RECTANGLE_ARB
 	qglDisable (GL_CLIP_PLANE0);
 	GL_Cull( CT_TWO_SIDED );
 
@@ -1950,4 +2005,5 @@ static inline void RB_DrawGlowOverlay()
 	qglPopMatrix();
 	qglMatrixMode(GL_MODELVIEW);
 	qglPopMatrix();
+#endif
 }
