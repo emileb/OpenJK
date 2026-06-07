@@ -153,10 +153,16 @@ set(CPACK_PACKAGE_FILE_NAME "OpenJK-${CMAKE_SYSTEM_NAME}-${Architecture}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "An improved Jedi Academy")
 set(CPACK_PACKAGE_VENDOR "JACoders")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "OpenJK")
-set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE.txt")
+set(CPACK_RESOURCE_FILE_README "${PROG_SOURCE_DIR}/README.md")
+set(CPACK_RESOURCE_FILE_LICENSE "${PROG_SOURCE_DIR}/LICENSE.txt")
 set(CPACK_PACKAGE_DIRECTORY ${PACKAGE_DIR})
 set(CPACK_BINARY_ZIP ON) # always create at least a zip file
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY 0) # prevent additional directory in zip
 
-include(CPack)
+# Android only builds the shared libraries: skip CPack packaging entirely
+# (no installer/zip generation, no LICENSE/README dependency). The component
+# and install-dir variables defined above are still needed because they are
+# passed as arguments to the add_*_project() functions.
+if(NOT ANDROID)
+	include(CPack)
+endif()

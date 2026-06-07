@@ -46,6 +46,13 @@ endif(MSVC)
 
 add_library(bundled_minizip STATIC ioapi.c unzip.c)
 
+# The NDK only exposes the 64-bit stdio file API (fopen64/ftello64/fseeko64)
+# at API level >= 24. We target a lower minSdk, so use the 32-bit file API
+# (fopen/ftell/fseek) to avoid unresolved symbols at link time.
+if(ANDROID)
+	target_compile_definitions(bundled_minizip PRIVATE USE_FILE32API)
+endif()
+
 # Let consumers get at our bundled copy in the standard CMake way.  These
 # variables are not set in the cache, but instead shadow the variables in the
 # cache.
