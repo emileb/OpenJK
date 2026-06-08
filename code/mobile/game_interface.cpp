@@ -241,6 +241,45 @@ void PortableAction(int state, int action)
     }
 }
 
+// Bitmask of force powers the player currently knows. Defined game-side
+// (g_svcmds.cpp) where g_entities is available.
+extern "C" int Mobile_GetForcePowersKnown(void);
+
+// Map a touch-layer PORT_ACT_FORCE_* action onto JKA's forcePowers_t enum.
+static int portForceActToFP(int action)
+{
+    switch (action)
+    {
+        case PORT_ACT_FORCE_HEAL:    return FP_HEAL;
+        case PORT_ACT_FORCE_MIND:    return FP_TELEPATHY; // "mind trick" / distract
+        case PORT_ACT_FORCE_SPEED:   return FP_SPEED;
+        case PORT_ACT_FORCE_PUSH:    return FP_PUSH;
+        case PORT_ACT_FORCE_PULL:    return FP_PULL;
+        case PORT_ACT_FORCE_GRIP:    return FP_GRIP;
+        case PORT_ACT_FORCE_LIGHT:   return FP_LIGHTNING;
+#ifndef JK2_MODE
+        // Jedi Academy-only powers (don't exist in the JK2 build).
+        case PORT_ACT_FORCE_DRAIN:   return FP_DRAIN;
+        case PORT_ACT_FORCE_RAGE:    return FP_RAGE;
+        case PORT_ACT_FORCE_PROTECT: return FP_PROTECT;
+        case PORT_ACT_FORCE_ABSORB:  return FP_ABSORB;
+        case PORT_ACT_FORCE_SIGHT:   return FP_SEE;
+#endif
+        default:                     return -1;
+    }
+}
+
+// Whether the player currently has the given force power (PORT_ACT_FORCE_*).
+// Lets the touch UI dim the force-select buttons for powers not yet learned.
+bool PortableGetForcePowerKnown(int forceAction)
+{
+    const int fp = portForceActToFP(forceAction);
+    if (fp < 0)
+        return false;
+
+    return (Mobile_GetForcePowersKnown() & (1 << fp)) != 0;
+}
+
 void PortableMove(float fwd, float strafe)
 {
     PortableMoveFwd(fwd);

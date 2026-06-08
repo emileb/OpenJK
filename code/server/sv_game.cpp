@@ -86,6 +86,27 @@ gentity_t	*SV_GEntityForSvEntity( svEntity_t *svEnt ) {
 	return SV_GentityNum( num );
 }
 
+#ifdef __ANDROID__
+// Used by the Android touch UI (Clibs_OpenTouch) to dim force-power buttons the
+// player can't use yet. The game module isn't linked into the client binary, so
+// we read the player's playerState through the in-process server's view of the
+// game entities (gentity_s::client is a playerState_t* here, see g_public.h).
+// Returns the bitmask of known force powers (forcePowers_t), or 0 when there is
+// no active player (menu, between levels, game not loaded).
+extern "C" int Mobile_GetForcePowersKnown( void ) {
+	if ( !ge || !ge->gentities ) {
+		return 0;
+	}
+
+	const gentity_t *player = SV_GentityNum( 0 );
+	if ( !player->inuse || !player->client ) {
+		return 0;
+	}
+
+	return player->client->forcePowersKnown;
+}
+#endif // __ANDROID__
+
 /*
 ===============
 SV_GameSendServerCommand
