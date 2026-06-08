@@ -1646,7 +1646,7 @@ void R_Register( void )
 	//
 
 	r_allowExtensions = ri.Cvar_Get( "r_allowExtensions", "1", CVAR_ARCHIVE_ND | CVAR_LATCH );
-	r_ext_compressed_textures = ri.Cvar_Get( "r_ext_compress_textures", "1", CVAR_ARCHIVE_ND | CVAR_LATCH );
+	r_ext_compressed_textures = ri.Cvar_Get( "r_ext_compress_textures", "0", CVAR_ARCHIVE_ND | CVAR_LATCH ); // 0 = uncompressed textures (highest quality)
 	r_ext_compressed_lightmaps = ri.Cvar_Get( "r_ext_compress_lightmaps", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	r_ext_preferred_tc_method = ri.Cvar_Get( "r_ext_preferred_tc_method", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	r_ext_gamma_control = ri.Cvar_Get( "r_ext_gamma_control", "1", CVAR_ARCHIVE_ND | CVAR_LATCH );
@@ -1671,9 +1671,9 @@ void R_Register( void )
 	r_texturebitslm = ri.Cvar_Get( "r_texturebitslm", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	r_overBrightBits = ri.Cvar_Get ("r_overBrightBits", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	r_mapOverBrightBits = ri.Cvar_Get( "r_mapOverBrightBits", "0", CVAR_ARCHIVE_ND|CVAR_LATCH );
-	r_simpleMipMaps = ri.Cvar_Get( "r_simpleMipMaps", "1", CVAR_ARCHIVE_ND | CVAR_LATCH );
+	r_simpleMipMaps = ri.Cvar_Get( "r_simpleMipMaps", "0", CVAR_ARCHIVE_ND | CVAR_LATCH ); // 0 = higher-quality mipmap downsampling
 	r_vertexLight = ri.Cvar_Get( "r_vertexLight", "0", CVAR_ARCHIVE | CVAR_LATCH );
-	r_subdivisions = ri.Cvar_Get ("r_subdivisions", "4", CVAR_ARCHIVE_ND | CVAR_LATCH);
+	r_subdivisions = ri.Cvar_Get ("r_subdivisions", "1", CVAR_ARCHIVE_ND | CVAR_LATCH); // 1 = finest curve tessellation (smoothest surfaces)
 	ri.Cvar_CheckRange( r_subdivisions, 0, 80, qfalse );
 	r_intensity = ri.Cvar_Get ("r_intensity", "1", CVAR_LATCH|CVAR_ARCHIVE_ND );
 
@@ -1686,10 +1686,10 @@ void R_Register( void )
 	//
 	// archived variables that can change at any time
 	//
-	r_lodCurveError = ri.Cvar_Get( "r_lodCurveError", "250", CVAR_ARCHIVE_ND );
+	r_lodCurveError = ri.Cvar_Get( "r_lodCurveError", "1000", CVAR_ARCHIVE_ND ); // keep curved surfaces detailed at distance
 	r_lodbias = ri.Cvar_Get( "r_lodbias", "0", CVAR_ARCHIVE_ND );
 	r_flares = ri.Cvar_Get ("r_flares", "1", CVAR_ARCHIVE_ND );
-	r_lodscale = ri.Cvar_Get( "r_lodscale", "10", CVAR_ARCHIVE_ND );
+	r_lodscale = ri.Cvar_Get( "r_lodscale", "20", CVAR_ARCHIVE_ND ); // keep models at higher LOD further away
 
 	r_znear = ri.Cvar_Get( "r_znear", "4", CVAR_ARCHIVE_ND );	//if set any lower, you lose a lot of precision in the distance
 	ri.Cvar_CheckRange( r_znear, 0.001f, 10, qfalse ); // was qtrue in JA, is qfalse properly in ioq3
@@ -1764,7 +1764,7 @@ void R_Register( void )
 	r_offsetUnits = ri.Cvar_Get( "r_offsetunits", "-2", CVAR_CHEAT );
 	r_lockpvs = ri.Cvar_Get ("r_lockpvs", "0", CVAR_CHEAT);
 	r_noportals = ri.Cvar_Get ("r_noportals", "0", CVAR_CHEAT);
-	r_shadows = ri.Cvar_Get( "cg_shadows", "1", 0 );
+	r_shadows = ri.Cvar_Get( "cg_shadows", "2", 0 ); // default to volumetric (stencil) shadows
 	r_shadowRange = ri.Cvar_Get( "r_shadowRange", "1000", CVAR_ARCHIVE_ND );
 
 /*
