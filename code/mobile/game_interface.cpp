@@ -54,6 +54,13 @@ static volatile int s_cmdUsed  = 0;
 static volatile float s_androidFwd  = 0.0f;
 static volatile float s_androidSide = 0.0f;
 
+// Look accumulators (iortcw/TFE style). Written on the touch thread, drained on the
+// engine thread in CL_AndroidMove() by forwarding to MouseMove().
+//  _mouse: per-swipe deltas - accumulate, then zeroed each frame once applied.
+//  _joy  : joystick magnitude - latest value held until the next update, not zeroed.
+static volatile float s_lookPitchMouse = 0.0f, s_lookPitchJoy = 0.0f;
+static volatile float s_lookYawMouse   = 0.0f, s_lookYawJoy   = 0.0f;
+
 static void postCommand( const char *cmd )
 {
 	if ( s_cmdAvail >= s_cmdUsed + ANDROID_CMD_QUEUE_LEN )
@@ -98,6 +105,21 @@ void CL_AndroidMove( usercmd_t *cmd )
 
 	cmd->forwardmove = (signed char)( fm >  127 ?  127 : ( fm < -127 ? -127 : fm ) );
 	cmd->rightmove   = (signed char)( rm >  127 ?  127 : ( rm < -127 ? -127 : rm ) );
+
+	// Drain the look accumulators through MouseMove() so they reach the view angles
+	// via the normal SDL mouse-motion path (sdl_input.cpp -> CL_MouseMove).
+	const float yawPx   = s_lookYawMouse   * ANDROID_LOOK_MOUSE_X_SCALE * 5
+	                    + s_lookYawJoy     * ANDROID_LOOK_JOY_X_SCALE;
+	const float pitchPx = s_lookPitchMouse * ANDROID_LOOK_MOUSE_Y_SCALE * 5
+	                    + s_lookPitchJoy   * ANDROID_LOOK_JOY_Y_SCALE;
+
+	if ( yawPx != 0.0f || pitchPx != 0.0f )
+		MouseMove( yawPx, pitchPx );
+
+	// Mouse-mode is per-swipe; zero it so we don't re-apply next frame.
+	// Joystick-mode is held; leave it until the touch layer pushes a new value.
+	s_lookYawMouse   = 0.0f;
+	s_lookPitchMouse = 0.0f;
 }
 
 extern "C" {
@@ -235,26 +257,30 @@ void PortableMoveSide(float strafe)
     s_androidSide = (strafe > 1.0f) ? 1.0f : (strafe < -1.0f ? -1.0f : strafe);
 }
 
-// Look pitch (vertical). Forwarded straight to the SDL mouse-motion injector.
+// Look pitch (vertical). Saved into the accumulators and drained next frame in
+// CL_AndroidMove(); mouse-mode deltas accumulate, joystick-mode holds the latest.
 void PortableLookPitch(int mode, float pitch)
 {
-    const float scale = (mode == LOOK_MODE_JOYSTICK) ? ANDROID_LOOK_JOY_Y_SCALE
-                                                      : ANDROID_LOOK_MOUSE_Y_SCALE;
-    MouseMove(0.0f, pitch * scale);
+    if (mode == LOOK_MODE_JOYSTICK)
+        s_lookPitchJoy    = pitch;
+    else
+        s_lookPitchMouse += pitch;
 }
 
-// Look yaw (horizontal). Forwarded straight to the SDL mouse-motion injector.
+// Look yaw (horizontal). Same accumulate-and-drain scheme as PortableLookPitch.
 void PortableLookYaw(int mode, float yaw)
 {
-    const float scale = (mode == LOOK_MODE_JOYSTICK) ? ANDROID_LOOK_JOY_X_SCALE
-                                                      : ANDROID_LOOK_MOUSE_X_SCALE;
-    MouseMove(yaw * scale, 0.0f);
+    if (mode == LOOK_MODE_JOYSTICK)
+        s_lookYawJoy    = yaw;
+    else
+        s_lookYawMouse += yaw;
 }
 
 // A direct touch/swipe drag -> mouse-mode look.
 void PortableMouse(float dx, float dy)
 {
-    MouseMove(dx * ANDROID_LOOK_MOUSE_X_SCALE, dy * ANDROID_LOOK_MOUSE_Y_SCALE);
+    s_lookYawMouse   += dx;
+    s_lookPitchMouse += dy;
 }
 
 void PortableMouseAbs(float x, float y)
@@ -288,9 +314,10 @@ bool PortableSetAlwaysRun(bool run)
 }
 
 // Map OpenJK's client state onto the touch screen mode so the right control set
-// shows: console overlay -> TS_CONSOLE, any UI/menu up -> TS_MENU, live gameplay
-// -> TS_GAME. Anything else (loading, disconnected at the main menu, cinematics)
-// falls back to menu so the on-screen mouse + keyboard stay usable.
+// shows: console overlay -> TS_CONSOLE, any UI/menu up -> TS_MENU, a cinematic ->
+// TS_BLANK (full-screen pass-through layer whose tap sends Enter to skip it), live
+// gameplay -> TS_GAME. Anything else (loading, disconnected at the main menu) falls
+// back to menu so the on-screen mouse + keyboard stay usable.
 touchscreemode_t PortableGetScreenMode()
 {
     const int catcher = Key_GetCatcher();
@@ -300,6 +327,11 @@ touchscreemode_t PortableGetScreenMode()
 
     if (catcher & KEYCATCH_UI)
         return TS_MENU;
+
+    // Full-screen ROQ cinematic, or an in-game scripted (Icarus) camera sequence:
+    // normal controls are ignored, so drop to the blank tap-to-skip layer.
+    if (cls.state == CA_CINEMATIC || CL_IsRunningInGameCinematic())
+        return TS_BLANK;
 
     if (cls.state == CA_ACTIVE)
         return TS_GAME;
