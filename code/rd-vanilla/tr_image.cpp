@@ -365,6 +365,7 @@ static void R_LightScaleTexture (unsigned *in, int inwidth, int inheight, qboole
 	{
 		if ( !glConfig.deviceSupportsGamma )
 		{
+#ifndef USE_GLES1 // GLES has no hardware gamma; r_gamma is applied live in RB_Brightness() instead of being baked into textures
 			int		i, c;
 			byte	*p;
 
@@ -377,6 +378,7 @@ static void R_LightScaleTexture (unsigned *in, int inwidth, int inheight, qboole
 				p[1] = s_gammatable[p[1]];
 				p[2] = s_gammatable[p[2]];
 			}
+#endif
 		}
 	}
 	else
@@ -401,9 +403,15 @@ static void R_LightScaleTexture (unsigned *in, int inwidth, int inheight, qboole
 		{
 			for (i=0 ; i<c ; i++, p+=4)
 			{
+#ifdef USE_GLES1 // GLES applies r_gamma live in RB_Brightness(); only bake intensity here
+				p[0] = s_intensitytable[p[0]];
+				p[1] = s_intensitytable[p[1]];
+				p[2] = s_intensitytable[p[2]];
+#else
 				p[0] = s_gammatable[s_intensitytable[p[0]]];
 				p[1] = s_gammatable[s_intensitytable[p[1]]];
 				p[2] = s_gammatable[s_intensitytable[p[2]]];
+#endif
 			}
 		}
 	}

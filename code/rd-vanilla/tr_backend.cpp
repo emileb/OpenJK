@@ -1577,6 +1577,102 @@ RB_SwapBuffers
 =============
 */
 extern void RB_RenderWorldEffects( void );
+
+#ifdef USE_GLES1
+/*
+=============
+RB_Brightness
+
+GLES has no hardware gamma ramp (SDL_SetWindowGammaRamp does nothing), so the
+r_gamma brightness slider is emulated with a single fullscreen fixed-function
+modulate pass. r_overBrightBits is folded in as an extra gain so levels match
+the desktop overbright look. A single pass can scale the framebuffer by up to 2x.
+=============
+*/
+static void RB_Brightness( void ) {
+	if ( glConfig.deviceSupportsGamma ) {
+		return; // hardware gamma is handling it
+	}
+
+	// r_gamma: 0.5 (dark) .. 1.0 (neutral) .. 3.0 (bright)
+	float gain = r_gamma->value;
+
+	int obBits = r_overBrightBits->integer;
+	if ( obBits > 1 ) {
+		obBits = 1; // matches R_SetColorMappings clamp
+	}
+	if ( obBits > 0 ) {
+		gain *= (float)( 1 << obBits );
+	}
+
+	if ( gain < 0.0f ) {
+		gain = 0.0f;
+	}
+
+	// nothing to do at unity
+	if ( gain > 0.999f && gain < 1.001f ) {
+		return;
+	}
+
+	if ( !backEnd.projection2D ) {
+		RB_SetGL2D();
+	}
+
+	GL_Bind( tr.whiteImage );
+
+	if ( gain < 1.0f ) {
+		// darken: result = Dst * gain
+		GL_State( GLS_DEPTHTEST_DISABLE | GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ZERO );
+		qglColor4f( gain, gain, gain, 1.0f );
+	} else {
+		// brighten: result = Dst + Dst*(gain-1) = Dst * gain, capped at 2x
+		float c = gain - 1.0f;
+		if ( c > 1.0f ) {
+			c = 1.0f;
+		}
+		GL_State( GLS_DEPTHTEST_DISABLE | GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ONE );
+		qglColor4f( c, c, c, 1.0f );
+	}
+
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		// 2D ortho is 0,0 .. 640,480 (see RB_SetGL2D). Sample the white texel.
+		GLfloat verts[] = {
+			0.0f,   0.0f,
+			640.0f, 0.0f,
+			640.0f, 480.0f,
+			0.0f,   480.0f,
+		};
+		GLfloat texs[] = {
+			0.0f, 0.0f,
+			0.0f, 0.0f,
+			0.0f, 0.0f,
+			0.0f, 0.0f,
+		};
+		qglVertexPointer(2, GL_FLOAT, 0, verts);
+		qglTexCoordPointer(2, GL_FLOAT, 0, texs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+}
+#endif
+
 const void	*RB_SwapBuffers( const void *data ) {
 	const swapBuffersCommand_t	*cmd;
 
@@ -1589,6 +1685,11 @@ const void	*RB_SwapBuffers( const void *data ) {
 	if ( r_showImages->integer ) {
 		RB_ShowImages();
 	}
+
+#ifdef USE_GLES1
+	// emulate the hardware gamma/brightness slider with a fullscreen pass
+	RB_Brightness();
+#endif
 
 	cmd = (const swapBuffersCommand_t *)data;
 
