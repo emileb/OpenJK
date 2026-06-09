@@ -3628,12 +3628,10 @@ void S_SetLipSyncs()
 #endif
 #endif
 
-#ifdef _WIN32
+	// timeGetTime() maps to the portable Sys_Milliseconds() on non-Windows (see top
+	// of file). It must use the same clock that set ch->iStartTime, or lip-sync
+	// timing (timePlayed below) is wrong - which desyncs talking in cutscenes.
 	currentTime = timeGetTime();
-#else
-    // FIXME: alternative to timeGetTime ?
-    currentTime = 0;
-#endif
 
 	memset(s_entityWavVol, 0, sizeof(s_entityWavVol));
 
