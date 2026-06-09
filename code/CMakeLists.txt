@@ -92,10 +92,11 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 			${CLIBS_DIR}
 			${CLIBS_DIR}/psi
 			${TOUCH_CONTROLS_DIR}
+			${OPENAL_INCLUDE_DIR}
 			)
 		set(SPEngineLibraries
 			${SPEngineLibraries}
-			SDL2 SDL2_image touchcontrols log
+			SDL2 SDL2_image touchcontrols openal-soft log
 			)
 	elseif(UseInternalSDL2)
 		if(CMAKE_SIZEOF_VOID_P EQUAL 4)
