@@ -54,23 +54,43 @@ set(PROG_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 #=============================================================================
 option(BuildPortableVersion "Build portable version (does not read or write files from your user/home directory" OFF)
 
-# Android only ships the single-player engines; multiplayer needs networking/server
-# bits that are not part of this port, so default the MP projects off there.
+# On Android we build the MP client (engine + rd-vanilla renderer + the
+# jampgame/cgame/ui VM modules) but not the dedicated server or the experimental
+# rend2 renderer (rend2 needs GLES2+ shaders that aren't part of this port).
+# BuildMPClientDefault gates the former, BuildMPDefault the latter.
 if(ANDROID)
 	set(BuildMPDefault OFF)
+	set(BuildMPClientDefault ON)
 	set(BuildJK2SPDefault ON)
 else()
 	set(BuildMPDefault ON)
+	set(BuildMPClientDefault ON)
 	set(BuildJK2SPDefault OFF)
 endif()
 
-option(BuildMPEngine "Whether to create projects for the MP client (openjk.exe)" ${BuildMPDefault})
-option(BuildMPRdVanilla "Whether to create projects for the MP default renderer (rd-vanilla_x86.dll)" ${BuildMPDefault})
+option(BuildMPEngine "Whether to create projects for the MP client (openjk.exe)" ${BuildMPClientDefault})
+option(BuildMPRdVanilla "Whether to create projects for the MP default renderer (rd-vanilla_x86.dll)" ${BuildMPClientDefault})
 option(BuildMPDed "Whether to create projects for the MP dedicated server (openjkded.exe)" ${BuildMPDefault})
-option(BuildMPGame "Whether to create projects for the MP server-side gamecode (jampgamex86.dll)" ${BuildMPDefault})
-option(BuildMPCGame "Whether to create projects for the MP clientside gamecode (cgamex86.dll)" ${BuildMPDefault})
-option(BuildMPUI "Whether to create projects for the MP UI code (uix86.dll)" ${BuildMPDefault})
+option(BuildMPGame "Whether to create projects for the MP server-side gamecode (jampgamex86.dll)" ${BuildMPClientDefault})
+option(BuildMPCGame "Whether to create projects for the MP clientside gamecode (cgamex86.dll)" ${BuildMPClientDefault})
+option(BuildMPUI "Whether to create projects for the MP UI code (uix86.dll)" ${BuildMPClientDefault})
 option(BuildMPRend2 "Whether to create projects for the EXPERIMENTAL MP rend2 renderer (rd-rend2_x86.dll)" ${BuildMPDefault})
+
+# option() only seeds its default on the FIRST configure; the value is then
+# pinned in CMakeCache.txt. Android Studio's existing cache was created when MP
+# was off, so flipping the defaults above isn't enough. Force the MP client
+# targets on for Android with normal (non-cache) variables, which shadow the
+# cached option values on every configure (no cache wipe required), while
+# leaving the dedicated server and rend2 off.
+if(ANDROID)
+	set(BuildMPEngine ON)
+	set(BuildMPRdVanilla ON)
+	set(BuildMPGame ON)
+	set(BuildMPCGame ON)
+	set(BuildMPUI ON)
+	set(BuildMPDed OFF)
+	set(BuildMPRend2 OFF)
+endif()
 
 option(BuildSPEngine "Whether to create projects for the SP engine (openjk_sp.exe)" ON)
 option(BuildSPGame "Whether to create projects for the SP gamecode (jagamex86.dll)" ON)

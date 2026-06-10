@@ -36,6 +36,15 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// GLES 1.1 has no immediate mode, so the shadow-volume edges can't be drawn with
+// glBegin/glEnd. _STENCIL_SHADOW_OPT switches to an indexed vertex-array path:
+// the silhouette-edge and front/far-cap triangle indices are recorded once into
+// static buffers and then replayed with glDrawElements, so the geometry isn't
+// rebuilt on every stencil pass of the frame.
+#ifdef USE_GLES1
+#define _STENCIL_SHADOW_OPT
+#endif
+
 #define _STENCIL_REVERSE
 
 typedef struct edgeDef_s {
@@ -48,7 +57,18 @@ typedef struct edgeDef_s {
 static	edgeDef_t	edgeDefs[SHADER_MAX_VERTEXES][MAX_EDGE_DEFS];
 static	int			numEdgeDefs[SHADER_MAX_VERTEXES];
 static	int			facing[SHADER_MAX_INDEXES/3];
+#ifdef _STENCIL_SHADOW_OPT
+// Cached shadow-volume geometry, replayed with glDrawElements (see above).
+static glIndex_t indexes[6*MAX_EDGE_DEFS*SHADER_MAX_VERTEXES];	// silhouette-edge triangle indices
+static int idx = 0;												// number of silhouette-edge indices recorded
+static glIndex_t cap_indexes[SHADER_MAX_INDEXES * 2];			// front/far cap triangle indices
+static int cap_idx = 0;											// number of cap indices recorded
+static qboolean shadow_volume_generated = qfalse;				// volume recorded this frame?
+// Holds both the near and extruded-far vertices, hence twice the vertex count.
+static	vec3_t		shadowXyz[SHADER_MAX_VERTEXES * 2];
+#else
 static	vec3_t		shadowXyz[SHADER_MAX_VERTEXES];
+#endif
 
 void R_AddEdgeDef( int i1, int i2, int facing ) {
 	int		c;
@@ -63,6 +83,40 @@ void R_AddEdgeDef( int i1, int i2, int facing ) {
 	numEdgeDefs[ i1 ]++;
 }
 
+// Replay the cached shadow-volume geometry (silhouette edges + front/far caps).
+#ifdef _STENCIL_SHADOW_OPT
+static void R_RenderShadowVolume( void )
+{
+	if(idx > 0)
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		qglVertexPointer(3, GL_FLOAT, 0, shadowXyz);
+		qglDrawElements(GL_TRIANGLES, idx, GL_INDEX_TYPE, indexes);
+		if(cap_idx > 0)
+		{
+			qglDrawElements(GL_TRIANGLES, cap_idx, GL_INDEX_TYPE, cap_indexes);
+		}
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+
+	}
+}
+#endif
+
 void R_RenderShadowEdges( void ) {
 	int		i;
 	int		c;
@@ -76,6 +130,15 @@ void R_RenderShadowEdges( void ) {
 #ifdef _STENCIL_REVERSE
 	int		numTris;
 	int		o1, o2, o3;
+#endif
+#ifdef _STENCIL_SHADOW_OPT // already recorded this frame? replay it; otherwise reset the buffers and rebuild
+	if(shadow_volume_generated)
+	{
+		R_RenderShadowVolume();
+		return;
+	}
+	idx = 0;
+	cap_idx = 0;
 #endif
 
 	// an edge is NOT a silhouette edge if its face doesn't face the light,
@@ -99,12 +162,52 @@ void R_RenderShadowEdges( void ) {
 			//we are going to render all edges even though it is a tiny bit slower. -rww
 #if 1
 			i2 = edgeDefs[ i ][ j ].i2;
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+#ifdef _STENCIL_SHADOW_OPT // record the silhouette-edge triangle indices (replayed later by R_RenderShadowVolume)
+			indexes[idx++] = i;
+			indexes[idx++] = i + SHADER_MAX_VERTEXES;
+			indexes[idx++] = i2;
+			indexes[idx++] = i2;
+			indexes[idx++] = i + SHADER_MAX_VERTEXES;
+			indexes[idx++] = i2 + SHADER_MAX_VERTEXES;
+#else
+            {
+                GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+                GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+                GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+                if (!glva)
+                    qglEnableClientState( GL_VERTEX_ARRAY );
+                if (gltca)
+                    qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+                if (glca)
+                    qglDisableClientState( GL_COLOR_ARRAY );
+
+                GLfloat vs[] = {
+                    tess.xyz[ i ][0],tess.xyz[ i ][1],tess.xyz[ i ][2],
+                    shadowXyz[ i ][0],shadowXyz[ i ][1],shadowXyz[ i ][2],
+                    tess.xyz[ i2 ][0],tess.xyz[ i2 ][1],tess.xyz[ i2 ][2],
+                    shadowXyz[ i2 ][0],shadowXyz[ i2 ][1],shadowXyz[ i2 ][2],
+                };
+                qglVertexPointer(3, GL_FLOAT, 0, vs);
+                qglDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+                if (!glva)
+                    qglDisableClientState( GL_VERTEX_ARRAY );
+                if (gltca)
+                    qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+                if (glca)
+                    qglEnableClientState( GL_COLOR_ARRAY );
+            }
+#endif
+#else
 			qglBegin( GL_TRIANGLE_STRIP );
 				qglVertex3fv( tess.xyz[ i ] );
 				qglVertex3fv( shadowXyz[ i ] );
 				qglVertex3fv( tess.xyz[ i2 ] );
 				qglVertex3fv( shadowXyz[ i2 ] );
 			qglEnd();
+#endif
 #else
 			hit[0] = 0;
 			hit[1] = 0;
@@ -151,6 +254,47 @@ void R_RenderShadowEdges( void ) {
 		o2 = tess.indexes[ i*3 + 1 ];
 		o3 = tess.indexes[ i*3 + 2 ];
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+#ifdef _STENCIL_SHADOW_OPT // record the front/far cap triangle indices (replayed later by R_RenderShadowVolume)
+		cap_indexes[cap_idx++] = o1;
+		cap_indexes[cap_idx++] = o2;
+		cap_indexes[cap_idx++] = o3;
+		cap_indexes[cap_idx++] = o3 + SHADER_MAX_VERTEXES;
+		cap_indexes[cap_idx++] = o2 + SHADER_MAX_VERTEXES;
+		cap_indexes[cap_idx++] = o1 + SHADER_MAX_VERTEXES;
+#else
+		{
+			GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+			GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+			GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+			if (!glva)
+				qglEnableClientState( GL_VERTEX_ARRAY );
+			if (gltca)
+				qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+			if (glca)
+				qglDisableClientState( GL_COLOR_ARRAY );
+
+			glIndex_t is[] = {
+				(glIndex_t)o1, (glIndex_t)o2, (glIndex_t)o3,
+			};
+			qglVertexPointer(3, GL_FLOAT, 0, &tess.xyz[0]);
+			qglDrawElements(GL_TRIANGLES, 3, GL_INDEX_TYPE, is);
+
+			glIndex_t sis[] = {
+				(glIndex_t)o3, (glIndex_t)o2, (glIndex_t)o1,
+			};
+			qglVertexPointer(3, GL_FLOAT, 0, shadowXyz);
+			qglDrawElements(GL_TRIANGLES, 3, GL_INDEX_TYPE, sis);
+			if (!glva)
+				qglDisableClientState( GL_VERTEX_ARRAY );
+			if (gltca)
+				qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+			if (glca)
+				qglEnableClientState( GL_COLOR_ARRAY );
+		}
+#endif
+#else
 		qglBegin(GL_TRIANGLES);
 			qglVertex3fv(tess.xyz[o1]);
 			qglVertex3fv(tess.xyz[o2]);
@@ -161,7 +305,13 @@ void R_RenderShadowEdges( void ) {
 			qglVertex3fv(shadowXyz[o2]);
 			qglVertex3fv(shadowXyz[o1]);
 		qglEnd();
+#endif
 	}
+
+#ifdef _STENCIL_SHADOW_OPT // draw the freshly recorded volume, then flag it so later passes only replay it
+	R_RenderShadowVolume();
+	shadow_volume_generated = qtrue;
+#endif
 #endif
 }
 
@@ -252,7 +402,12 @@ void RB_DoShadowTessEnd( vec3_t lightPos )
 		VectorAdd(tess.xyz[i], backEnd.ori.origin, worldxyz);
 		groundDist = worldxyz[2] - backEnd.currentEntity->e.shadowPlane;
 		groundDist += 16.0f; //fudge factor
+#ifdef _STENCIL_SHADOW_OPT // store the near (tess) and extruded-far vertices in shadowXyz for indexed drawing
+		memcpy(shadowXyz[i], tess.xyz[i], sizeof(vec3_t));
+		VectorMA( tess.xyz[i], -groundDist, lightDir, shadowXyz[SHADER_MAX_VERTEXES + i] );
+#else
 		VectorMA( tess.xyz[i], -groundDist, lightDir, shadowXyz[i] );
+#endif
 	}
 #else
 	if (lightPos)
@@ -347,6 +502,9 @@ void RB_DoShadowTessEnd( vec3_t lightPos )
 #endif
 
 #ifdef _STENCIL_REVERSE
+#ifdef _STENCIL_SHADOW_OPT // new shadow pass: force the volume to be rebuilt
+	shadow_volume_generated = qfalse;
+#endif
 	qglDepthFunc(GL_LESS);
 
 	//now using the Carmack Reverse<tm> -rww
@@ -458,12 +616,43 @@ void RB_ShadowFinish( void ) {
 	//GL_State( GLS_DEPTHMASK_TRUE | GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
 	GL_State( GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			-100.0f,  100.0f, -10.0f,
+			100.0f,  100.0f, -10.0f,
+			100.0f, -100.0f, -10.0f,
+			-100.0f, -100.0f, -10.0f
+		};
+		qglVertexPointer(3, GL_FLOAT, 0, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin( GL_QUADS );
 	qglVertex3f( -100, 100, -10 );
 	qglVertex3f( 100, 100, -10 );
 	qglVertex3f( 100, -100, -10 );
 	qglVertex3f( -100, -100, -10 );
 	qglEnd ();
+#endif
 
 	qglColor4f(1,1,1,1);
 	qglDisable( GL_STENCIL_TEST );
@@ -582,7 +771,11 @@ void RB_CaptureScreenImage(void)
 		cY = 0;
 	}
 
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 float internal format; use 8-bit RGBA
+	qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cX, cY, radX, radY, 0);
+#else
 	qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16, cX, cY, radX, radY, 0);
+#endif
 }
 
 //yeah.. not really shadow-related.. but it's stencil-related. -rww
@@ -654,6 +847,45 @@ void RB_DistortionFill(void)
 		GL_State(0);
 	}
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		qglColor4f(1.0f, 1.0f, 1.0f, alpha);
+		GLfloat vs[] = {
+			0.0f+spost2, 1.0f-spost,
+			0.0f, 0.0f,
+
+			0.0f+spost2, 0.0f+spost,
+			0.0f, (float)glConfig.vidHeight,
+
+			1.0f-spost2, 0.0f+spost,
+			(float)glConfig.vidWidth, (float)glConfig.vidHeight,
+
+			1.0f-spost2, 1.0f-spost,
+			(float)glConfig.vidWidth, 0.0f,
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin(GL_QUADS);
 		qglColor4f(1.0f, 1.0f, 1.0f, alpha);
 		qglTexCoord2f(0+spost2, 1-spost);
@@ -668,6 +900,7 @@ void RB_DistortionFill(void)
 		qglTexCoord2f(1-spost2, 1-spost);
 		qglVertex2f(glConfig.vidWidth, 0);
 	qglEnd();
+#endif
 
 	if (tr_distortionAlpha == 1.0f && tr_distortionStretch == 0.0f)
 	{ //no overrides
@@ -696,6 +929,45 @@ void RB_DistortionFill(void)
 		}
 		spost2 *= 0.2f;
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		qglColor4f(1.0f, 1.0f, 1.0f, alpha);
+		GLfloat vs[] = {
+			0.0f+spost2, 1.0f-spost,
+			0.0f, 0.0f,
+
+			0.0f+spost2, 0.0f+spost,
+			0.0f, (float)glConfig.vidHeight,
+
+			1.0f-spost2, 0.0f+spost,
+			(float)glConfig.vidWidth, (float)glConfig.vidHeight,
+
+			1.0f-spost2, 1.0f-spost,
+			(float)glConfig.vidWidth, 0.0f,
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 		qglBegin(GL_QUADS);
 			qglColor4f(1.0f, 1.0f, 1.0f, alpha);
 			qglTexCoord2f(0+spost2, 1-spost);
@@ -710,6 +982,7 @@ void RB_DistortionFill(void)
 			qglTexCoord2f(1-spost2, 1-spost);
 			qglVertex2f(glConfig.vidWidth, 0);
 		qglEnd();
+#endif
 	}
 
 	//pop the view matrices back

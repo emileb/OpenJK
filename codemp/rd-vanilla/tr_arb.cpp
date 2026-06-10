@@ -126,6 +126,7 @@ END";
 #define GL_PROGRAM_ERROR_POSITION_ARB					0x864B
 
 void ARB_InitGPUShaders(void) {
+#if !defined(USE_GLES1) // GLES 1.1 has no ARB vertex/fragment programs, NV register combiners or display lists
 	if ( !qglGenProgramsARB )
 	{
 		return;
@@ -229,4 +230,5 @@ void ARB_InitGPUShaders(void) {
 			glConfigExt.doGammaCorrectionWithShaders = qfalse;
 		}
 	}
+#endif
 }

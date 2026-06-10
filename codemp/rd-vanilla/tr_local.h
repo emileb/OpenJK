@@ -29,8 +29,13 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "ghoul2/ghoul2_shared.h" //rwwRMG - added
 #include "qgl.h"
 
+#ifdef USE_GLES1 // GLES 1.1 indices must be GL_UNSIGNED_SHORT, not GL_UNSIGNED_INT
+#define GL_INDEX_TYPE		GL_UNSIGNED_SHORT
+typedef unsigned short glIndex_t;
+#else
 #define GL_INDEX_TYPE		GL_UNSIGNED_INT
 typedef unsigned int glIndex_t;
+#endif
 
 #define LL(x) x=LittleLong(x)
 

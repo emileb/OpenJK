@@ -1325,6 +1325,12 @@ void CL_FinishMove( usercmd_t *cmd ) {
 	VectorCopy( cl.viewangles, cl_lastViewAngles );
 }
 
+#ifdef __ANDROID__
+// Applies on-screen touch movement and drains queued touch commands.
+// Defined in codemp/mobile/game_interface.cpp.
+void CL_AndroidMove( usercmd_t *cmd );
+#endif
+
 /*
 =================
 CL_CreateCmd
@@ -1351,6 +1357,11 @@ usercmd_t CL_CreateCmd( void ) {
 
 	// get basic movement from joystick
 	CL_JoystickMove( &cmd );
+
+#ifdef __ANDROID__
+	// fold in touch-screen movement + drain queued touch commands (engine thread)
+	CL_AndroidMove( &cmd );
+#endif
 
 	// check to make sure the angles haven't wrapped
 	if ( cl.viewangles[PITCH] - oldAngles[PITCH] > 90 ) {

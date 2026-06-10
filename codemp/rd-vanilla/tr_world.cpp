@@ -1181,12 +1181,45 @@ const void *R_DrawWireframeAutomap(const void *data)
 	qglPushMatrix();
 	qglLoadIdentity(); //get the ident matrix
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use a vertex array
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		const GLfloat zf = -(backEnd.viewParms.zFar-1);
+		const GLfloat qi = (GLfloat)QUADINFINITY;
+		GLfloat vs[] = {
+			-qi,  qi, zf,
+			 qi,  qi, zf,
+			 qi, -qi, zf,
+			-qi, -qi, zf,
+		};
+		qglVertexPointer(3, GL_FLOAT, 0, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin( GL_QUADS );
 	qglVertex3f( -QUADINFINITY, QUADINFINITY, -(backEnd.viewParms.zFar-1) );
 	qglVertex3f( QUADINFINITY, QUADINFINITY, -(backEnd.viewParms.zFar-1) );
 	qglVertex3f( QUADINFINITY, -QUADINFINITY, -(backEnd.viewParms.zFar-1) );
 	qglVertex3f( -QUADINFINITY, -QUADINFINITY, -(backEnd.viewParms.zFar-1) );
 	qglEnd ();
+#endif
 
 	//pop back the viewmatrix
 	qglPopMatrix();
@@ -1288,6 +1321,58 @@ const void *R_DrawWireframeAutomap(const void *data)
 			continue;
 		}
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode; build a per-vertex-coloured vertex array
+		{
+			GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+			GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+			GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+			if (!glva)
+				qglEnableClientState( GL_VERTEX_ARRAY );
+			if (gltca)
+				qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+			if (!glca)
+				qglEnableClientState( GL_COLOR_ARRAY );
+
+			const int n = s->numPoints;
+			GLfloat *verts = (GLfloat *)malloc(sizeof(GLfloat) * n * 3);
+			GLfloat *cols  = (GLfloat *)malloc(sizeof(GLfloat) * n * 4);
+
+			// fill mode tints blue by the (constant per-surface) plane-normal Z
+			const bool fillMode = !(r_autoMap->integer == 2 || s->numPoints < 3);
+			float planeNormalZ = 0.0f;
+			if (fillMode)
+			{
+				planeNormalZ = s->points[0].xyz[0]*(s->points[1].xyz[1]-s->points[2].xyz[1]) + s->points[1].xyz[0]*(s->points[2].xyz[1]-s->points[0].xyz[1]) + s->points[2].xyz[0]*(s->points[0].xyz[1]-s->points[1].xyz[1]);
+				if (planeNormalZ < 0.0f) planeNormalZ = -planeNormalZ;
+			}
+
+			for (i = 0; i < n; i++)
+			{
+				cols[i*4+0] = s->points[i].color[0];
+				cols[i*4+1] = s->points[i].color[1];
+				cols[i*4+2] = fillMode ? (1.0f-planeNormalZ) : s->points[i].color[2];
+				cols[i*4+3] = s->points[i].alpha;
+				verts[i*3+0] = s->points[i].xyz[0];
+				verts[i*3+1] = s->points[i].xyz[1];
+				verts[i*3+2] = s->points[i].xyz[2];
+			}
+
+			qglColorPointer(4, GL_FLOAT, 0, cols);
+			qglVertexPointer(3, GL_FLOAT, 0, verts);
+			qglDrawArrays(GL_TRIANGLES, 0, n);
+
+			free(verts);
+			free(cols);
+
+			if (!glva)
+				qglDisableClientState( GL_VERTEX_ARRAY );
+			if (gltca)
+				qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+			if (!glca)
+				qglDisableClientState( GL_COLOR_ARRAY );
+		}
+#else
 		i = 0;
 		qglBegin(GL_TRIANGLES);
 		while (i < s->numPoints)
@@ -1323,6 +1408,7 @@ const void *R_DrawWireframeAutomap(const void *data)
 			i++;
 		}
 		qglEnd();
+#endif
 		s = s->next;
 	}
 #else

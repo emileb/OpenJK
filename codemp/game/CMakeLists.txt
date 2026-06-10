@@ -25,7 +25,7 @@ set(MPGameIncludeDirectories
 	"${MPDir}"
 	"${SharedDir}"
 	"${GSLIncludeDirectory}"
-	"${CMAKE_BINARY_DIR}/shared"
+	"${PROG_BINARY_DIR}/shared"
 	)
 if(WIN32)
 	set(MPGameLibraries "winmm")
@@ -210,8 +210,9 @@ set(MPGameFiles ${MPGameFiles} ${MPGameUiFiles})
 
 add_library(${MPGame} SHARED ${MPGameFiles})
 
-if(NOT MSVC)
+if(NOT MSVC AND NOT ANDROID)
 	# remove "lib" prefix for .so/.dylib files
+	# (Android keeps the "lib" prefix so the .so is packaged into the APK)
 	set_target_properties(${MPGame} PROPERTIES PREFIX "")
 endif()
 

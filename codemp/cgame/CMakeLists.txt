@@ -25,7 +25,7 @@ set(MPCGameIncludeDirectories
 	"${MPDir}"
 	"${SharedDir}"
 	"${GSLIncludeDirectory}"
-	"${CMAKE_BINARY_DIR}/shared"
+	"${PROG_BINARY_DIR}/shared"
 	)
 if(WIN32)
 	set(MPCGameLibraries "odbc32" "odbccp32") # what are these even?
@@ -142,8 +142,9 @@ set(MPCGameFiles ${MPCGameFiles} ${MPCGameG2Files})
 
 add_library(${MPCGame} SHARED ${MPCGameFiles})
 
-if(NOT MSVC)
+if(NOT MSVC AND NOT ANDROID)
 	# remove "lib" prefix for .so/.dylib files
+	# (Android keeps the "lib" prefix so the .so is packaged into the APK)
 	set_target_properties(${MPCGame} PROPERTIES PREFIX "")
 endif()
 

@@ -180,7 +180,7 @@ if(BuildMPEngine OR BuildMPDed)
 	endif(WIN32)
 
 	# Include directories
-	set(MPEngineAndDedIncludeDirectories ${MPDir} ${SharedDir} ${GSLIncludeDirectory} ${CMAKE_BINARY_DIR}/shared)
+	set(MPEngineAndDedIncludeDirectories ${MPDir} ${SharedDir} ${GSLIncludeDirectory} ${PROG_BINARY_DIR}/shared)
 
 	# Transparently use our bundled minizip.
 	list(APPEND MPEngineAndDedIncludeDirectories ${MINIZIP_INCLUDE_DIRS})
@@ -357,7 +357,13 @@ if(BuildMPEngine)
 
 	#    Dependencies
 
-	if (NOT WIN32)
+	if (ANDROID)
+		# OpenGL ES 1.x Common profile (+ EGL) from the NDK. The renderer is a
+		# separate .so, but the shared OpenTouch touch layer compiled into the
+		# engine (touch_interface_openjk.cpp) calls GL directly (glIsEnabled, ...),
+		# so the engine must link GLES too.
+		set(MPEngineLibraries ${MPEngineLibraries} GLESv1_CM EGL)
+	elseif (NOT WIN32)
 		# OpenGL
 		find_package(OpenGL REQUIRED)
 		set(MPEngineIncludeDirectories ${MPEngineIncludeDirectories} ${OPENGL_INCLUDE_DIR})
@@ -381,7 +387,23 @@ if(BuildMPEngine)
 		endif(UseInternalOpenAL)
 	endif()
 
-	if(UseInternalSDL2)
+	if(ANDROID)
+		# SDL2, SDL2_image and the touch controls library are imported by the
+		# top-level Alpha wrapper CMakeLists; the OpenTouch C glue lives in CLIBS_DIR.
+		set(MPEngineIncludeDirectories
+			${MPEngineIncludeDirectories}
+			${SDL2_ANDROID_INCLUDE_DIR}
+			${SDL2_IMAGE_ANDROID_INCLUDE_DIR}
+			${CLIBS_DIR}
+			${CLIBS_DIR}/psi
+			${TOUCH_CONTROLS_DIR}
+			${OPENAL_INCLUDE_DIR}
+			)
+		set(MPEngineLibraries
+			${MPEngineLibraries}
+			SDL2 SDL2_image touchcontrols openal-soft log
+			)
+	elseif(UseInternalSDL2)
 		if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 			set(MPEngineLibraries
 				${MPEngineLibraries}
@@ -555,6 +577,32 @@ if(BuildMPEngine)
 	set(MPEngineFiles ${MPEngineFiles} ${MPEngineSysFiles})
 	source_group("sys" FILES ${MPEngineSysFiles})
 
+	if(ANDROID)
+		# OpenTouch Android glue (JNI bridge + on-screen touch controls), shared by
+		# every engine in Alpha Touch, plus the OpenJK-MP-specific mobile entry point
+		# (mobile/game_interface.cpp). The Portable* functions there are currently
+		# stubs; see TheForceEngine's TheForceEngine/mobile/game_interface.cpp +
+		# Clibs_OpenTouch/alpha/touch_interface_tfe.cpp for a fully-wired template.
+		set(MPEngineOpenTouchFiles
+			"${MPDir}/mobile/game_interface.cpp"
+			"${CLIBS_DIR}/psi/touch_interface_openjk.cpp"
+			"${CLIBS_DIR}/psi/android_jni.cpp"
+			"${CLIBS_DIR}/touch_interface_base.cpp"
+			"${CLIBS_DIR}/LogWritter.c"
+			"${CLIBS_DIR}/fts.c"
+			"${CLIBS_DIR}/rand.c"
+			)
+		source_group("opentouch" FILES ${MPEngineOpenTouchFiles})
+		set(MPEngineFiles ${MPEngineFiles} ${MPEngineOpenTouchFiles})
+
+		# The per-game touch interface builds its touch-settings XML filenames by
+		# concatenating the ENGINE_NAME string literal (e.g. "game_" ENGINE_NAME
+		# ".xml"). Only this source uses it, so scope the define to the file.
+		set_source_files_properties(
+			"${CLIBS_DIR}/psi/touch_interface_openjk.cpp"
+			PROPERTIES COMPILE_DEFINITIONS "ENGINE_NAME=\"openjk\"")
+	endif()
+
 	if(MakeApplicationBundles)
 		set(MACOSX_BUNDLE_BUNDLE_NAME ${MPEngine})
 		set(MACOSX_BUNDLE_DISPLAY_NAME ${MPEngine})
@@ -578,6 +626,10 @@ if(BuildMPEngine)
 					)
 			endif()
 		endif()
+	elseif(ANDROID)
+		# On Android the engine is loaded as a shared library by SDLActivity, not
+		# launched as an executable (see main_android in shared/sys/sys_main.cpp).
+		add_library(${MPEngine} SHARED ${MPEngineFiles})
 	else(WIN32)
 		if(MakeApplicationBundles)
 			add_executable(${MPEngine} MACOSX_BUNDLE ${MPEngineFiles})

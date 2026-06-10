@@ -638,6 +638,19 @@ void *Sys_LoadGameDll( const char *name, GetModuleAPIProc **moduleAPI )
 	void	*libHandle = NULL;
 	char	filename[MAX_OSPATH];
 
+#ifdef __ANDROID__
+	// MP VM modules (jampgame/cgame/ui) are packaged into the APK as lib<name>.so
+	// and loaded directly from the app's native library dir; there is no PK3
+	// unpacking or fs_* search path on Android.
+	Com_sprintf( filename, sizeof(filename), "lib%s" DLL_EXT, name );
+	char *fn = va( "%s/%s", nativeLibsPath, filename );
+	libHandle = Sys_LoadLibrary( fn );
+	if ( !libHandle )
+	{
+		Com_Printf( "%s(%s) failed: \"%s\"\n", __FUNCTION__, fn, Sys_LibraryError() );
+		return NULL;
+	}
+#else
 	Com_sprintf (filename, sizeof(filename), "%s" ARCH_STRING DLL_EXT, name);
 
 #if defined(_DEBUG)
@@ -697,6 +710,7 @@ void *Sys_LoadGameDll( const char *name, GetModuleAPIProc **moduleAPI )
 			}
 		}
 	}
+#endif
 
 	*moduleAPI = (GetModuleAPIProc *)Sys_LoadFunction( libHandle, "GetModuleAPI" );
 	if ( !*moduleAPI ) {

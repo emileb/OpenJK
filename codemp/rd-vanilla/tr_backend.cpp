@@ -22,7 +22,11 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "tr_local.h"
+// glext.h declares desktop-GL extensions whose typedefs (e.g. GLsizeiptr) clash
+// with the GLES 1.x headers; the GLES build defines what it needs in qgl.h.
+#if !defined(USE_GLES1)
 #include "glext.h"
+#endif
 #include "tr_WorldEffects.h"
 
 backEndData_t	*backEndData;
@@ -332,6 +336,7 @@ void GL_State( uint32_t stateBits )
 		}
 	}
 
+#if !defined(USE_GLES1) // GLES 1.1 has no glPolygonMode (polygons are always filled)
 	//
 	// fill/line mode
 	//
@@ -346,6 +351,7 @@ void GL_State( uint32_t stateBits )
 			qglPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 		}
 	}
+#endif
 
 	//
 	// depthtest
@@ -539,7 +545,11 @@ void RB_BeginDrawingView (void) {
 	// clip to the plane of the portal
 	if ( backEnd.viewParms.isPortal ) {
 		float	plane[4];
+#ifdef USE_GLES1 // GLES 1.1 clip planes use GLfloat (glClipPlanef)
+		GLfloat plane2[4];
+#else
 		double	plane2[4];
+#endif
 
 		plane[0] = backEnd.viewParms.portalPlane.normal[0];
 		plane[1] = backEnd.viewParms.portalPlane.normal[1];
@@ -1066,7 +1076,11 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 						cY = 0;
 					}
 
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 internal format; use GL_RGBA
+					qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cX, cY, radX, radY, 0);
+#else
 					qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16, cX, cY, radX, radY, 0);
+#endif
 				}
 				lastPostEnt = ENTITYNUM_NONE;
 			}
@@ -1131,7 +1145,11 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 					}
 
 					//now copy a portion of the screen to this texture
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 internal format; use GL_RGBA
+					qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cX, cY, rad, rad, 0);
+#else
 					qglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16, cX, cY, rad, rad, 0);
+#endif
 
 					lastPostEnt = pRender->entNum;
 				}
@@ -1250,7 +1268,11 @@ void RE_StretchRaw (int x, int y, int w, int h, int cols, int rows, const byte *
 	if ( cols != tr.scratchImage[client]->width || rows != tr.scratchImage[client]->height ) {
 		tr.scratchImage[client]->width = cols;
 		tr.scratchImage[client]->height = rows;
+#ifdef USE_GLES1 // GLES 1.1 has no sized GL_RGB8 internal format and requires it to match the source format
+		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#else
 		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#endif
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glConfig.clampToEdgeAvailable ? GL_CLAMP_TO_EDGE : GL_CLAMP );
@@ -1272,6 +1294,41 @@ void RE_StretchRaw (int x, int y, int w, int h, int cols, int rows, const byte *
 
 	qglColor3f( tr.identityLight, tr.identityLight, tr.identityLight );
 
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use a vertex array
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			0.5f / cols,            0.5f / rows,
+			(GLfloat)x,     (GLfloat)y,
+			(cols - 0.5f) / cols,   0.5f / rows,
+			(GLfloat)(x+w), (GLfloat)y,
+			(cols - 0.5f) / cols,   (rows - 0.5f) / rows,
+			(GLfloat)(x+w), (GLfloat)(y+h),
+			0.5f / cols,            (rows - 0.5f) / rows,
+			(GLfloat)x,     (GLfloat)(y+h),
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 	qglBegin (GL_QUADS);
 	qglTexCoord2f ( 0.5f / cols,  0.5f / rows );
 	qglVertex2f (x, y);
@@ -1282,6 +1339,7 @@ void RE_StretchRaw (int x, int y, int w, int h, int cols, int rows, const byte *
 	qglTexCoord2f ( 0.5f / cols, ( rows - 0.5f ) / rows );
 	qglVertex2f (x, y+h);
 	qglEnd ();
+#endif
 }
 
 void RE_UploadCinematic (int cols, int rows, const byte *data, int client, qboolean dirty) {
@@ -1293,7 +1351,11 @@ void RE_UploadCinematic (int cols, int rows, const byte *data, int client, qbool
 		// Note: q3 has the commented sections being uploaded width/height
 		tr.scratchImage[client]->width = /*tr.scratchImage[client]->width =*/ cols;
 		tr.scratchImage[client]->height = /*tr.scratchImage[client]->height =*/ rows;
+#ifdef USE_GLES1 // GLES 1.1 has no sized GL_RGB8 internal format and requires it to match the source format
+		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#else
 		qglTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+#endif
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 		qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glConfig.clampToEdgeAvailable ? GL_CLAMP_TO_EDGE : GL_CLAMP );
@@ -1710,7 +1772,9 @@ const void	*RB_DrawBuffer( const void *data ) {
 
 	cmd = (const drawBufferCommand_t *)data;
 
+#if !defined(USE_GLES1) // GLES 1.1 has no glDrawBuffer
 	qglDrawBuffer( cmd->buffer );
+#endif
 
 	// clear screen for debugging
 	if (tr.world && tr.world->globalFog != -1)
@@ -1804,6 +1868,41 @@ void RB_ShowImages( void ) {
 		}
 
 		GL_Bind( image );
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode (glBegin/glEnd); use vertex arrays
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		GLfloat vs[] = {
+			0.0f, 0.0f,
+			x, y,
+			1.0f, 0.0f,
+			x + w, y,
+			1.0f, 1.0f,
+			x + w, y + h,
+			0.0f, 1.0f,
+			x, y + h,
+		};
+		qglVertexPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs + 2);
+		qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 4, vs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+#else
 		qglBegin (GL_QUADS);
 		qglTexCoord2f( 0, 0 );
 		qglVertex2f( x, y );
@@ -1814,6 +1913,7 @@ void RB_ShowImages( void ) {
 		qglTexCoord2f( 0, 1 );
 		qglVertex2f( x, y + h );
 		qglEnd();
+#endif
 		i++;
 	}
 
@@ -1825,6 +1925,7 @@ void RB_ShowImages( void ) {
 
 static void RB_GammaCorrectRender()
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no ARB programs, 3D textures, GL_TEXTURE_RECTANGLE_ARB or immediate mode
 	qglPushAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
 
 	RB_SetGL2D();
@@ -1866,7 +1967,104 @@ static void RB_GammaCorrectRender()
 	GL_SelectTexture(0);
 
 	qglPopAttrib();
+#endif
 }
+
+#ifdef USE_GLES1
+/*
+=============
+RB_Brightness
+
+GLES has no hardware gamma ramp (SDL_SetWindowGammaRamp does nothing) and no
+ARB-shader gamma path (RB_GammaCorrectRender), so the r_gamma brightness slider
+is emulated with a single fullscreen fixed-function modulate pass. r_overBrightBits
+is folded in as an extra gain so levels match the desktop overbright look. A
+single pass can scale the framebuffer by up to 2x.
+=============
+*/
+static void RB_Brightness( void ) {
+	if ( glConfig.deviceSupportsGamma ) {
+		return; // hardware gamma is handling it
+	}
+
+	// r_gamma: 0.5 (dark) .. 1.0 (neutral) .. 3.0 (bright)
+	float gain = r_gamma->value;
+
+	int obBits = r_overBrightBits->integer;
+	if ( obBits > 1 ) {
+		obBits = 1; // matches R_SetColorMappings clamp
+	}
+	if ( obBits > 0 ) {
+		gain *= (float)( 1 << obBits );
+	}
+
+	if ( gain < 0.0f ) {
+		gain = 0.0f;
+	}
+
+	// nothing to do at unity
+	if ( gain > 0.999f && gain < 1.001f ) {
+		return;
+	}
+
+	if ( !backEnd.projection2D ) {
+		RB_SetGL2D();
+	}
+
+	GL_Bind( tr.whiteImage );
+
+	if ( gain < 1.0f ) {
+		// darken: result = Dst * gain
+		GL_State( GLS_DEPTHTEST_DISABLE | GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ZERO );
+		qglColor4f( gain, gain, gain, 1.0f );
+	} else {
+		// brighten: result = Dst + Dst*(gain-1) = Dst * gain, capped at 2x
+		float c = gain - 1.0f;
+		if ( c > 1.0f ) {
+			c = 1.0f;
+		}
+		GL_State( GLS_DEPTHTEST_DISABLE | GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ONE );
+		qglColor4f( c, c, c, 1.0f );
+	}
+
+	{
+		GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+		GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+		GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+		if (!glva)
+			qglEnableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglDisableClientState( GL_COLOR_ARRAY );
+
+		// 2D ortho is 0,0 .. 640,480 (see RB_SetGL2D). Sample the white texel.
+		GLfloat verts[] = {
+			0.0f,   0.0f,
+			640.0f, 0.0f,
+			640.0f, 480.0f,
+			0.0f,   480.0f,
+		};
+		GLfloat texs[] = {
+			0.0f, 0.0f,
+			0.0f, 0.0f,
+			0.0f, 0.0f,
+			0.0f, 0.0f,
+		};
+		qglVertexPointer(2, GL_FLOAT, 0, verts);
+		qglTexCoordPointer(2, GL_FLOAT, 0, texs);
+		qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (!glva)
+			qglDisableClientState( GL_VERTEX_ARRAY );
+		if (!gltca)
+			qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		if (glca)
+			qglEnableClientState( GL_COLOR_ARRAY );
+	}
+}
+#endif
 
 
 /*
@@ -1893,10 +2091,16 @@ const void	*RB_SwapBuffers( const void *data ) {
 		RB_ShowImages();
 	}
 
+#ifdef USE_GLES1
+	// emulate the hardware gamma/brightness slider with a fullscreen pass
+	RB_Brightness();
+#endif
+
 	cmd = (const swapBuffersCommand_t *)data;
 
 	// we measure overdraw by reading back the stencil buffer and
 	// counting up the number of increments that have happened
+#if !defined(USE_GLES1) // GLES 1.1 glReadPixels cannot read GL_STENCIL_INDEX
 	if ( r_measureOverdraw->integer ) {
 		int i;
 		long sum = 0;
@@ -1912,6 +2116,7 @@ const void	*RB_SwapBuffers( const void *data ) {
 		backEnd.pc.c_overDraw += sum;
 		Hunk_FreeTempMemory( stencilReadback );
 	}
+#endif
 
     if ( !glState.finishCalled ) {
         qglFinish();
@@ -2009,6 +2214,7 @@ GLuint g_uiCurrentPixelShaderType = 0x0;
 // Begin using a Pixel Shader.
 void BeginPixelShader( GLuint uiType, GLuint uiID )
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no ARB fragment programs, NV register combiners or display lists
 	switch ( uiType )
 	{
 		// Using Register Combiners, so call the Display List that stores it.
@@ -2040,6 +2246,7 @@ void BeginPixelShader( GLuint uiType, GLuint uiID )
 		}
 		return;
 	}
+#endif
 }
 
 // Stop using a Pixel Shader and return states to normal.
@@ -2057,6 +2264,7 @@ extern bool g_bTextureRectangleHack;
 
 static inline void RB_BlurGlowTexture()
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no ARB shaders, GL_TEXTURE_RECTANGLE_ARB or immediate mode
 	qglDisable (GL_CLIP_PLANE0);
 	GL_Cull( CT_TWO_SIDED );
 	qglDisable( GL_DEPTH_TEST );
@@ -2229,11 +2437,13 @@ static inline void RB_BlurGlowTexture()
 	qglEnable( GL_DEPTH_TEST );
 
 	glState.currenttmu = 0;	//this matches the last one we activated
+#endif
 }
 
 // Draw the glow blur over the screen additively.
 static inline void RB_DrawGlowOverlay()
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no ARB shaders, GL_TEXTURE_RECTANGLE_ARB or immediate mode
 	qglDisable (GL_CLIP_PLANE0);
 	GL_Cull( CT_TWO_SIDED );
 	qglDisable( GL_DEPTH_TEST );
@@ -2365,4 +2575,5 @@ static inline void RB_DrawGlowOverlay()
 	qglPopMatrix();
 
 	qglEnable( GL_DEPTH_TEST );
+#endif
 }

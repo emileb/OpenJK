@@ -39,7 +39,11 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "Ratl/vector_vs.h"
 #include "Ratl/bits_vs.h"
 
+// glext.h declares desktop-GL extensions whose typedefs (e.g. GLsizeiptr) clash
+// with the GLES 1.x headers; the GLES build defines what it needs in qgl.h.
+#if !defined(USE_GLES1)
 #include "glext.h"
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Defines
@@ -842,7 +846,11 @@ public:
 
 		mVertexCount = VertexCount;
 
+#ifdef USE_GLES1 // GLES 1.1 has no GL_QUADS; draw the quads as triangles instead
+		mGLModeEnum = (mVertexCount==3)?(GL_TRIANGLES):(GL_TRIANGLE_FAN);
+#else
 		mGLModeEnum = (mVertexCount==3)?(GL_TRIANGLES):(GL_QUADS);
+#endif
 	}
 
 
@@ -1240,6 +1248,112 @@ public:
 
 		// Begin
 		//-------
+#ifdef USE_GLES1 // GLES 1.1 has no immediate mode or GL_QUADS; use vertex arrays of triangles
+		{
+			GLboolean glva = qglIsEnabled(GL_VERTEX_ARRAY);
+			GLboolean gltca = qglIsEnabled(GL_TEXTURE_COORD_ARRAY);
+			GLboolean glca = qglIsEnabled(GL_COLOR_ARRAY);
+
+			if (!glva)
+				qglEnableClientState( GL_VERTEX_ARRAY );
+			if (!gltca)
+				qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+			if (glca)
+				qglDisableClientState( GL_COLOR_ARRAY );
+
+			for (particleNum=0; particleNum<mParticleCount; particleNum++)
+			{
+				part = &(mParticles[particleNum]);
+				if (!part->mFlags.get_bit(CWeatherParticle::FLAG_RENDER))
+				{
+					continue;
+				}
+
+				// Blend Mode Zero -> Apply Alpha Just To Alpha Channel
+				//------------------------------------------------------
+				if (mBlendMode==0)
+				{
+					qglColor4f(mColor[0], mColor[1], mColor[2], part->mAlpha);
+				}
+
+				// Otherwise Apply Alpha To All Channels
+				//---------------------------------------
+				else
+				{
+					qglColor4f(mColor[0]*part->mAlpha, mColor[1]*part->mAlpha, mColor[2]*part->mAlpha, mColor[3]*part->mAlpha);
+				}
+
+				// Render A Triangle
+				//-------------------
+				if (mVertexCount==3)
+				{
+					GLfloat vs[] = {
+						1.0f, 0.0f,
+						part->mPosition[0],
+								part->mPosition[1],
+								part->mPosition[2],
+
+						0.0f, 1.0f,
+						part->mPosition[0] + mCameraLeft[0],
+								part->mPosition[1] + mCameraLeft[1],
+								part->mPosition[2] + mCameraLeft[2],
+
+						0.0f, 0.0f,
+						part->mPosition[0] + mCameraLeftPlusUp[0],
+								part->mPosition[1] + mCameraLeftPlusUp[1],
+								part->mPosition[2] + mCameraLeftPlusUp[2],
+					};
+
+					qglVertexPointer(3, GL_FLOAT, sizeof(GLfloat) * 5, vs + 2);
+					qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 5, vs);
+					qglDrawArrays(GL_TRIANGLES, 0, 3);
+				}
+
+				// Render A Quad
+				//---------------
+				else
+				{
+					GLfloat vs[] = {
+						// Left bottom.
+						0.0f, 0.0f,
+						part->mPosition[0] - mCameraLeftMinusUp[0],
+								part->mPosition[1] - mCameraLeftMinusUp[1],
+								part->mPosition[2] - mCameraLeftMinusUp[2],
+
+						// Right bottom.
+						1.0f, 0.0f,
+						part->mPosition[0] - mCameraLeftPlusUp[0],
+								part->mPosition[1] - mCameraLeftPlusUp[1],
+								part->mPosition[2] - mCameraLeftPlusUp[2],
+
+						// Right top.
+						1.0f, 1.0f,
+						part->mPosition[0] + mCameraLeftMinusUp[0],
+								part->mPosition[1] + mCameraLeftMinusUp[1],
+								part->mPosition[2] + mCameraLeftMinusUp[2],
+
+						// Left top.
+						0.0f, 1.0f,
+						part->mPosition[0] + mCameraLeftPlusUp[0],
+								part->mPosition[1] + mCameraLeftPlusUp[1],
+								part->mPosition[2] + mCameraLeftPlusUp[2],
+					};
+
+					qglVertexPointer(3, GL_FLOAT, sizeof(GLfloat) * 5, vs + 2);
+					qglTexCoordPointer(2, GL_FLOAT, sizeof(GLfloat) * 5, vs);
+					qglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+				}
+			}
+
+			if (!glva)
+				qglDisableClientState( GL_VERTEX_ARRAY );
+			if (!gltca)
+				qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+			if (glca)
+				qglEnableClientState( GL_COLOR_ARRAY );
+		}
+#else
 		qglBegin(mGLModeEnum);
 		for (particleNum=0; particleNum<mParticleCount; particleNum++)
 		{
@@ -1313,6 +1427,7 @@ public:
 			}
 		}
 		qglEnd();
+#endif
 
 		//qglEnable(GL_CULL_FACE);
 		//you don't need to do this when you are properly setting cull state.

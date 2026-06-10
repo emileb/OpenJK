@@ -24,7 +24,11 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 // tr_image.c
 #include "tr_local.h"
 #include "../rd-common/tr_common.h"
+// glext.h declares desktop-GL extensions whose typedefs (e.g. GLsizeiptr) clash
+// with the GLES 1.x headers; the GLES build defines what it needs in qgl.h.
+#if !defined(USE_GLES1)
 #include "glext.h"
+#endif
 
 #include <map>
 
@@ -154,6 +158,7 @@ static float R_BytesPerTex (int format)
 		return glConfig.colorBits/8.0f;
 		break;
 
+#if !defined(USE_GLES1) // these sized/compressed internal formats do not exist on GLES 1.1
 	case GL_RGBA4:
 		//"RGBA4"
 		return 2;
@@ -184,6 +189,7 @@ static float R_BytesPerTex (int format)
 		//"DXT5 "
 		return 1;
 		break;
+#endif
 	default:
 		//"???? "
 		return 4;
@@ -253,6 +259,7 @@ void R_ImageList_f( void ) {
 		case 4:
 			ri.Printf( PRINT_ALL, "RGBA " );
 			break;
+#if !defined(USE_GLES1) // these sized/compressed internal formats do not exist on GLES 1.1
 		case GL_RGBA8:
 			ri.Printf( PRINT_ALL, "RGBA8" );
 			break;
@@ -274,6 +281,11 @@ void R_ImageList_f( void ) {
 		case GL_RGB5:
 			ri.Printf( PRINT_ALL, "RGB5 " );
 			break;
+#else
+		case GL_RGBA:
+			ri.Printf( PRINT_ALL, "RGBA" );
+			break;
+#endif
 		default:
 			ri.Printf( PRINT_ALL, "???? " );
 		}
@@ -282,9 +294,11 @@ void R_ImageList_f( void ) {
 		case GL_REPEAT:
 			ri.Printf( PRINT_ALL, "rept " );
 			break;
+#if !defined(USE_GLES1) // GLES 1.1 aliases GL_CLAMP to GL_CLAMP_TO_EDGE (see qgl.h), so this case would collide
 		case GL_CLAMP:
 			ri.Printf( PRINT_ALL, "clmp " );
 			break;
+#endif
 		case GL_CLAMP_TO_EDGE:
 			ri.Printf( PRINT_ALL, "clpE " );
 			break;
@@ -320,6 +334,7 @@ void R_LightScaleTexture (unsigned *in, int inwidth, int inheight, qboolean only
 	{
 		if ( !glConfig.deviceSupportsGamma && !glConfigExt.doGammaCorrectionWithShaders )
 		{
+#ifndef USE_GLES1 // GLES has no hardware gamma; r_gamma is applied live in RB_Brightness() instead of being baked into textures
 			int		i, c;
 			byte	*p;
 
@@ -332,6 +347,7 @@ void R_LightScaleTexture (unsigned *in, int inwidth, int inheight, qboolean only
 				p[1] = s_gammatable[p[1]];
 				p[2] = s_gammatable[p[2]];
 			}
+#endif
 		}
 	}
 	else
@@ -356,9 +372,15 @@ void R_LightScaleTexture (unsigned *in, int inwidth, int inheight, qboolean only
 		{
 			for (i=0 ; i<c ; i++, p+=4)
 			{
+#ifdef USE_GLES1 // GLES applies r_gamma live in RB_Brightness(); only bake intensity here
+				p[0] = s_intensitytable[p[0]];
+				p[1] = s_intensitytable[p[1]];
+				p[2] = s_intensitytable[p[2]];
+#else
 				p[0] = s_gammatable[s_intensitytable[p[0]]];
 				p[1] = s_gammatable[s_intensitytable[p[1]]];
 				p[2] = s_gammatable[s_intensitytable[p[2]]];
+#endif
 			}
 		}
 	}
@@ -650,6 +672,12 @@ static void Upload32( unsigned *data,
 			}
 		}
 
+		// GLES 1.1 requires the internal format to match the source format, and has
+		// none of the sized/compressed formats the desktop path selects below, so
+		// always upload as GL_RGBA. (TODO: use GL_RGB for 3-component textures.)
+#ifdef USE_GLES1
+		*pformat = GL_RGBA;
+#else
 		// select proper internal format
 		if ( samples == 3 )
 		{
@@ -707,6 +735,7 @@ static void Upload32( unsigned *data,
 				*pformat = 4;
 			}
 		}
+#endif
 
 		*pUploadWidth = width;
 		*pUploadHeight = height;
@@ -1258,12 +1287,14 @@ static void R_CreateFogImage( void ) {
 	tr.fogImage = R_CreateImage("*fog", (byte *)data, FOG_S, FOG_T, GL_RGBA, qfalse, qfalse, qfalse, GL_CLAMP );
 	Hunk_FreeTempMemory( data );
 
+#if !defined(USE_GLES1) // GLES 1.1 has no texture border colour (GL_TEXTURE_BORDER_COLOR)
 	borderColor[0] = 1.0;
 	borderColor[1] = 1.0;
 	borderColor[2] = 1.0;
 	borderColor[3] = 1;
 
 	qglTexParameterfv( GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor );
+#endif
 }
 
 /*
@@ -1324,7 +1355,11 @@ void R_CreateBuiltinImages( void ) {
 	qglDisable( GL_TEXTURE_2D );
 	qglEnable( GL_TEXTURE_RECTANGLE_ARB );
 	qglBindTexture( GL_TEXTURE_RECTANGLE_ARB, tr.screenGlow );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 float internal format; use 8-bit RGBA
+	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+#else
 	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA16, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGB, GL_FLOAT, 0 );
+#endif
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP );
@@ -1333,7 +1368,11 @@ void R_CreateBuiltinImages( void ) {
 	// Create the scene image. - AReis
 	tr.sceneImage = 1024 + giTextureBindNum++;
 	qglBindTexture( GL_TEXTURE_RECTANGLE_ARB, tr.sceneImage );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 float internal format; use 8-bit RGBA
+	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+#else
 	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA16, glConfig.vidWidth, glConfig.vidHeight, 0, GL_RGB, GL_FLOAT, 0 );
+#endif
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP );
@@ -1350,13 +1389,18 @@ void R_CreateBuiltinImages( void ) {
 	}
 	tr.blurImage = 1024 + giTextureBindNum++;
 	qglBindTexture( GL_TEXTURE_RECTANGLE_ARB, tr.blurImage );
+#ifdef USE_GLES1 // GLES 1.1 has no GL_RGBA16 float internal format; use 8-bit RGBA
+	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA, r_DynamicGlowWidth->integer, r_DynamicGlowHeight->integer, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+#else
 	qglTexImage2D( GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA16, r_DynamicGlowWidth->integer, r_DynamicGlowHeight->integer, 0, GL_RGB, GL_FLOAT, 0 );
+#endif
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP );
 	qglTexParameteri( GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP );
 	qglDisable( GL_TEXTURE_RECTANGLE_ARB );
 
+#if !defined(USE_GLES1) // GLES 1.1 has no 3D textures (GL_TEXTURE_3D / glTexImage3D); gamma is done live in RB_Brightness()
 	if ( glConfigExt.doGammaCorrectionWithShaders )
 	{
 		qglEnable( GL_TEXTURE_3D );
@@ -1370,6 +1414,7 @@ void R_CreateBuiltinImages( void ) {
 		qglTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		qglDisable(GL_TEXTURE_3D);
 	}
+#endif
 
 	qglEnable(GL_TEXTURE_2D);
 
@@ -1481,6 +1526,7 @@ void R_SetColorMappings( void ) {
 
 void R_SetGammaCorrectionLUT()
 {
+#if !defined(USE_GLES1) // GLES 1.1 has no 3D textures (GL_TEXTURE_3D / glTexSubImage3D); shader-based gamma LUT is unused
 	if ( glConfigExt.doGammaCorrectionWithShaders )
 	{
 		int inf;
@@ -1523,6 +1569,7 @@ void R_SetGammaCorrectionLUT()
 
 		ri.Hunk_FreeTempMemory(lutTable);
 	}
+#endif
 }
 
 /*

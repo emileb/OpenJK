@@ -127,15 +127,22 @@ list(APPEND MPVanillaRendererLibraries          ${ZLIB_LIBRARIES})
 list(APPEND MPVanillaRendererIncludeDirectories ${MINIZIP_INCLUDE_DIRS})
 list(APPEND MPVanillaRendererLibraries          ${MINIZIP_LIBRARIES})
 
-find_package(OpenGL REQUIRED)
-set(MPVanillaRendererIncludeDirectories ${MPVanillaRendererIncludeDirectories} ${OPENGL_INCLUDE_DIR})
-set(MPVanillaRendererLibraries ${MPVanillaRendererLibraries} ${OPENGL_LIBRARIES})
+if(ANDROID)
+	# OpenGL ES 1.x Common profile (+ EGL) from the NDK; rd-vanilla is a
+	# fixed-function renderer, so it targets GLES1, not ES2/ES3.
+	set(MPVanillaRendererLibraries ${MPVanillaRendererLibraries} GLESv1_CM EGL)
+else()
+	find_package(OpenGL REQUIRED)
+	set(MPVanillaRendererIncludeDirectories ${MPVanillaRendererIncludeDirectories} ${OPENGL_INCLUDE_DIR})
+	set(MPVanillaRendererLibraries ${MPVanillaRendererLibraries} ${OPENGL_LIBRARIES})
+endif()
 
 set(MPVanillaRendererIncludeDirectories ${MPVanillaRendererIncludeDirectories} ${OpenJKLibDir})
 add_library(${MPVanillaRenderer} SHARED ${MPVanillaRendererFiles})
 
-if(NOT MSVC)
+if(NOT MSVC AND NOT ANDROID)
 	# remove "lib" prefix for .so/.dylib files
+	# (Android keeps the "lib" prefix so the .so is packaged into the APK)
 	set_target_properties(${MPVanillaRenderer} PROPERTIES PREFIX "")
 endif()
 

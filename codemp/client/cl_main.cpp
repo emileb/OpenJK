@@ -2424,14 +2424,24 @@ void CL_InitRef( void ) {
 
 	cl_renderer = Cvar_Get( "cl_renderer", DEFAULT_RENDER_LIBRARY, CVAR_ARCHIVE|CVAR_LATCH, "Which renderer library to use" );
 
+#ifdef __ANDROID__
+	// Android packages the renderer as librd-vanilla.so (lib prefix, no arch
+	// suffix) and Sys_LoadDll loads it by name from the native library dir.
+	Com_sprintf( dllName, sizeof( dllName ), "lib%s" DLL_EXT, cl_renderer->string );
+#else
 	Com_sprintf( dllName, sizeof( dllName ), "%s_" ARCH_STRING DLL_EXT, cl_renderer->string );
+#endif
 
 	if( !(rendererLib = Sys_LoadDll( dllName, qfalse )) && strcmp( cl_renderer->string, cl_renderer->resetString ) )
 	{
 		Com_Printf( "failed: trying to load fallback renderer\n" );
 		Cvar_ForceReset( "cl_renderer" );
 
+#ifdef __ANDROID__
+		Com_sprintf( dllName, sizeof( dllName ), "lib" DEFAULT_RENDER_LIBRARY DLL_EXT );
+#else
 		Com_sprintf( dllName, sizeof( dllName ), DEFAULT_RENDER_LIBRARY "_" ARCH_STRING DLL_EXT );
+#endif
 		rendererLib = Sys_LoadDll( dllName, qfalse );
 	}
 
