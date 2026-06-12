@@ -96,7 +96,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 			)
 		set(SPEngineLibraries
 			${SPEngineLibraries}
-			SDL2 SDL2_image touchcontrols openal-soft log
+			SDL2 SDL2_image touchcontrols saffal openal-soft log
 			)
 	elseif(UseInternalSDL2)
 		if(CMAKE_SIZEOF_VOID_P EQUAL 4)
