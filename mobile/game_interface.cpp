@@ -1,8 +1,14 @@
-// OpenJK mobile entry point.
+// OpenJK mobile entry point (shared by the single-player and multiplayer builds).
 //
-// Bridges the OpenTouch Android touch layer (Clibs_OpenTouch/game_interface.h)
-// to the OpenJK single-player engine. The touch UI / JNI bridge calls these
-// Portable* functions to drive input, query screen state and pump the engine.
+// Bridges the OpenTouch Android touch layer (Clibs_OpenTouch/game_interface.h) to
+// the OpenJK engine. The touch UI / JNI bridge calls these Portable* functions to
+// drive input, query screen state and pump the engine.
+//
+// SP and MP are nearly identical here; the few differences are guarded by
+// OPENJK_MP (defined only on the MP/codemp build): a handful of force-power
+// command strings, the SP-only quicksave/datapad commands, the force-power "known"
+// query (a real game-side hook in SP, a stub in MP), and the SP-only in-game
+// scripted-cinematic check.
 //
 // Action/command mapping is ported from the old jk3 port (jk3_old's in_android.cpp).
 // Keyboard and mouse-look go through SDL injection (consumed by sdl_input.cpp).
@@ -17,8 +23,14 @@
 #include "game_interface.h"
 
 // OpenJK client state + command buffer + usercmd_t. client.h resolves its own
-// relative includes from code/client/, so it is safe to pull in from here.
-#include "../client/client.h"
+// relative includes from its own engine's client/ dir, so it is safe to pull in
+// from here. This file lives in the shared mobile/ folder (a sibling of code/ and
+// codemp/), so reach into the right engine's client/ for the active build.
+#ifdef OPENJK_MP
+#include "../codemp/client/client.h"
+#else
+#include "../code/client/client.h"
+#endif
 
 // Android engine entry point, defined in shared/sys/sys_main.cpp (named
 // main_android there to avoid SDL's `#define main SDL_main` and the special
@@ -200,20 +212,39 @@ void PortableAction(int state, int action)
         // --- One-shot commands (issued on press) ---
         case PORT_ACT_NEXT_WEP:    if (state) postCommand("weapnext");        break;
         case PORT_ACT_PREV_WEP:    if (state) postCommand("weapprev");        break;
+#ifndef OPENJK_MP
         case PORT_ACT_QUICKSAVE:   if (state) postCommand("save quick");      break;
         case PORT_ACT_QUICKLOAD:   if (state) postCommand("load quick");      break;
+#endif
         case PORT_ACT_INVUSE:      if (state) postCommand("invuse");          break;
         case PORT_ACT_INVPREV:     if (state) postCommand("invprev");         break;
         case PORT_ACT_INVNEXT:     if (state) postCommand("invnext");         break;
         case PORT_ACT_NEXT_FORCE:  if (state) postCommand("forcenext");       break;
         case PORT_ACT_PREV_FORCE:  if (state) postCommand("forceprev");       break;
+#ifndef OPENJK_MP
         case PORT_ACT_DATAPAD:
         case PORT_ACT_HELPCOMP:    if (state) postCommand("datapad");         break;
+#endif
         case PORT_ACT_SABER_STYLE: if (state) postCommand("saberAttackCycle"); break;
         case PORT_ACT_THIRD_PERSON:if (state) postCommand("cg_thirdperson !"); break;
         case PORT_ACT_SABER_SEL:   if (state) postCommand("weapon 1");        break;
 
-        // --- Force powers (issued on press) ---
+        // --- Force powers (issued on press). SP and MP use different console
+        //     command names for several powers. ---
+#ifdef OPENJK_MP
+        case PORT_ACT_FORCE_PULL:   if (state) postCommand("+force_pull");      break;
+        case PORT_ACT_FORCE_MIND:   if (state) postCommand("force_distract");   break;
+        case PORT_ACT_FORCE_PUSH:   if (state) postCommand("force_throw");      break;
+        case PORT_ACT_FORCE_SPEED:  if (state) postCommand("force_speed");      break;
+        case PORT_ACT_FORCE_HEAL:   if (state) postCommand("force_heal");       break;
+        case PORT_ACT_FORCE_GRIP:   if (state) postCommand("+force_grip");      break;
+        case PORT_ACT_FORCE_LIGHT:  if (state) postCommand("+force_lightning"); break;
+        case PORT_ACT_FORCE_DRAIN:  if (state) postCommand("+force_drain");     break;
+        case PORT_ACT_FORCE_RAGE:   if (state) postCommand("force_rage");       break;
+        case PORT_ACT_FORCE_PROTECT:if (state) postCommand("force_protect");    break;
+        case PORT_ACT_FORCE_ABSORB: if (state) postCommand("force_absorb");     break;
+        case PORT_ACT_FORCE_SIGHT:  if (state) postCommand("force_seeing");     break;
+#else
         case PORT_ACT_FORCE_PULL:   if (state) postCommand("force_pull");      break;
         case PORT_ACT_FORCE_MIND:   if (state) postCommand("force_distract");  break;
         case PORT_ACT_FORCE_PUSH:   if (state) postCommand("force_throw");     break;
@@ -226,6 +257,7 @@ void PortableAction(int state, int action)
         case PORT_ACT_FORCE_PROTECT:if (state) postCommand("force_protect");   break;
         case PORT_ACT_FORCE_ABSORB: if (state) postCommand("force_absorb");    break;
         case PORT_ACT_FORCE_SIGHT:  if (state) postCommand("force_sight");     break;
+#endif
 
         default:
             // Direct weapon select: PORT_ACT_WEAP0..WEAP13 -> "weapon N".
@@ -240,6 +272,18 @@ void PortableAction(int state, int action)
             break;
     }
 }
+
+#ifdef OPENJK_MP
+
+// MP has no client-side "which force powers does the player know" query hook
+// (that lives in the server gamecode VM), so the touch UI can't dim force-select
+// buttons here. Always report "known" so every button stays active.
+bool PortableGetForcePowerKnown(int forceAction)
+{
+    return false;
+}
+
+#else
 
 // Bitmask of force powers the player currently knows. Defined game-side
 // (g_svcmds.cpp) where g_entities is available.
@@ -279,6 +323,8 @@ bool PortableGetForcePowerKnown(int forceAction)
 
     return (Mobile_GetForcePowersKnown() & (1 << fp)) != 0;
 }
+
+#endif // OPENJK_MP
 
 void PortableMove(float fwd, float strafe)
 {
@@ -367,9 +413,15 @@ touchscreemode_t PortableGetScreenMode()
     if (catcher & KEYCATCH_UI)
         return TS_MENU;
 
+#ifdef OPENJK_MP
+    // Full-screen ROQ cinematic: normal controls are ignored, so drop to the
+    // blank tap-to-skip layer.
+    if (cls.state == CA_CINEMATIC)
+#else
     // Full-screen ROQ cinematic, or an in-game scripted (Icarus) camera sequence:
     // normal controls are ignored, so drop to the blank tap-to-skip layer.
     if (cls.state == CA_CINEMATIC || CL_IsRunningInGameCinematic())
+#endif
         return TS_BLANK;
 
     if (cls.state == CA_ACTIVE)

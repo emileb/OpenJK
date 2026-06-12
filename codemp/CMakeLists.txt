@@ -395,7 +395,7 @@ if(BuildMPEngine)
 			${SDL2_ANDROID_INCLUDE_DIR}
 			${SDL2_IMAGE_ANDROID_INCLUDE_DIR}
 			${CLIBS_DIR}
-			${CLIBS_DIR}/psi
+			${PROG_SOURCE_DIR}/mobile
 			${TOUCH_CONTROLS_DIR}
 			${OPENAL_INCLUDE_DIR}
 			)
@@ -578,14 +578,14 @@ if(BuildMPEngine)
 	source_group("sys" FILES ${MPEngineSysFiles})
 
 	if(ANDROID)
-		# OpenTouch Android glue (JNI bridge + on-screen touch controls), shared by
-		# every engine in Alpha Touch, plus the OpenJK-MP-specific mobile entry point
-		# (mobile/game_interface.cpp). The Portable* functions there are currently
-		# stubs; see TheForceEngine's TheForceEngine/mobile/game_interface.cpp +
-		# Clibs_OpenTouch/alpha/touch_interface_tfe.cpp for a fully-wired template.
+		# OpenTouch Android glue (JNI bridge + on-screen touch controls). The JNI
+		# bridge is shared from CLIBS_DIR; the OpenJK touch interface and mobile
+		# entry point live in the shared OpenJK mobile/ folder, used by both the SP
+		# and MP targets. game_interface.cpp branches on OPENJK_MP (defined just
+		# below) for the MP-specific bits.
 		set(MPEngineOpenTouchFiles
-			"${MPDir}/mobile/game_interface.cpp"
-			"${CLIBS_DIR}/psi/touch_interface_openjk.cpp"
+			"${PROG_SOURCE_DIR}/mobile/game_interface.cpp"
+			"${PROG_SOURCE_DIR}/mobile/touch_interface_openjk.cpp"
 			"${CLIBS_DIR}/psi/android_jni.cpp"
 			"${CLIBS_DIR}/touch_interface_base.cpp"
 			"${CLIBS_DIR}/LogWritter.c"
@@ -595,12 +595,18 @@ if(BuildMPEngine)
 		source_group("opentouch" FILES ${MPEngineOpenTouchFiles})
 		set(MPEngineFiles ${MPEngineFiles} ${MPEngineOpenTouchFiles})
 
+		# Select the MP code paths in the shared mobile entry point.
+		set_source_files_properties(
+			"${PROG_SOURCE_DIR}/mobile/game_interface.cpp"
+			PROPERTIES COMPILE_DEFINITIONS "OPENJK_MP")
+
 		# The per-game touch interface builds its touch-settings XML filenames by
 		# concatenating the ENGINE_NAME string literal (e.g. "game_" ENGINE_NAME
-		# ".xml"). Only this source uses it, so scope the define to the file.
+		# ".xml"). Only this source uses it, so scope the define to the file. MP uses
+		# its own name so it gets a separate set of touch-settings XML files.
 		set_source_files_properties(
-			"${CLIBS_DIR}/psi/touch_interface_openjk.cpp"
-			PROPERTIES COMPILE_DEFINITIONS "ENGINE_NAME=\"openjk\"")
+			"${PROG_SOURCE_DIR}/mobile/touch_interface_openjk.cpp"
+			PROPERTIES COMPILE_DEFINITIONS "ENGINE_NAME=\"openjkmp\"")
 	endif()
 
 	if(MakeApplicationBundles)
