@@ -59,6 +59,12 @@ extern void UI_SaberAttachToChar( itemDef_t *item );
 
 extern qboolean PC_Script_Parse(const char **out);
 
+#ifdef __ANDROID__
+// Mobile tap-to-select: whether the on-screen menu cursor should be hidden (the
+// finger replaces it). Owned by the OpenTouch mobile glue (mobile/game_interface.cpp).
+extern "C" int PortableGetMouseTapMode(void);
+#endif
+
 #define LISTBUFSIZE 10240
 
 static struct
@@ -539,7 +545,12 @@ void _UI_Refresh( int realtime )
 	UI_SetColor( NULL );
 	if (Menu_Count() > 0)
 	{
-		if (uiInfo.uiDC.cursorShow == qtrue)
+		if (uiInfo.uiDC.cursorShow == qtrue
+#ifdef __ANDROID__
+			// Mobile tap-to-select hides the cursor; the finger replaces it.
+			&& !PortableGetMouseTapMode()
+#endif
+		   )
 		{
 			UI_DrawHandlePic( uiInfo.uiDC.cursorx, uiInfo.uiDC.cursory, 48, 48, uiInfo.uiDC.Assets.cursor);
 		}
@@ -4036,6 +4047,38 @@ void _UI_MouseEvent( int dx, int dy )
 	}
 
 }
+
+#ifdef __ANDROID__
+/*
+=================
+UI_MobileSetCursor
+
+Mobile tap-to-select: place the menu cursor at a normalized screen point [0,1]
+(called from the OpenTouch touch layer when a finger taps/drags a menu). The UI is
+a fixed SCREEN_WIDTH x SCREEN_HEIGHT virtual canvas stretched to the framebuffer,
+so this mapping is resolution/aspect independent (no widescreen bias needed). The
+clamp and Display_MouseMove() refresh mirror _UI_MouseEvent above.
+=================
+*/
+extern "C" void UI_MobileSetCursor( float fracX, float fracY )
+{
+	int x = (int)( fracX * SCREEN_WIDTH );
+	int y = (int)( fracY * SCREEN_HEIGHT );
+
+	if (x < 0)					x = 0;
+	else if (x > SCREEN_WIDTH)	x = SCREEN_WIDTH;
+	if (y < 0)					y = 0;
+	else if (y > SCREEN_HEIGHT)	y = SCREEN_HEIGHT;
+
+	uiInfo.uiDC.cursorx = x;
+	uiInfo.uiDC.cursory = y;
+
+	if (Menu_Count() > 0)
+	{
+		Display_MouseMove(NULL, uiInfo.uiDC.cursorx, uiInfo.uiDC.cursory);
+	}
+}
+#endif
 
 /*
 =================

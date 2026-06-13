@@ -42,6 +42,12 @@ extern int main_android(int argc, char *argv[]);
 // SDL_KEYDOWN/UP path in sdl_input.cpp, so remappable binds keep working.
 extern "C" int SDL_SendKeyboardKey(Uint8 state, SDL_Scancode scancode);
 
+#ifndef OPENJK_MP
+// SP menu cursor teleport for tap-to-select (code/ui/ui_main.cpp). Takes a
+// normalized screen point [0,1]. SP only: the MP UI lives in a separate VM module.
+extern "C" void UI_MobileSetCursor(float fracX, float fracY);
+#endif
+
 // Look sensitivities. Deltas from the touch layer are normalised; these scale
 // them to the pixel units MouseMove() forwards to SDL_InjectMouse().
 static const float ANDROID_LOOK_MOUSE_X_SCALE = 1000.0f;
@@ -65,6 +71,17 @@ static volatile int s_cmdUsed  = 0;
 // Latest analog move from the touch sticks, each in [-1, 1].
 static volatile float s_androidFwd  = 0.0f;
 static volatile float s_androidSide = 0.0f;
+
+// Menu mouse style. true  = tap-to-select (teleport the UI cursor straight onto
+// the tapped menu item; the cursor is hidden), false = relative drag of a visible
+// cursor. Toggled from the app via PortableSetMouseTapMode(). Default on for SP
+// (matching TFE); off for MP, whose UI is a separate VM we can't teleport into nor
+// hide the cursor of, so it must keep the working relative-drag cursor.
+#ifdef OPENJK_MP
+static bool s_mouseTapMode = false;
+#else
+static bool s_mouseTapMode = true;
+#endif
 
 // Look accumulators (iortcw/TFE style). Written on the touch thread, drained on the
 // engine thread in CL_AndroidMove() by forwarding to MouseMove().
@@ -376,6 +393,28 @@ void PortableMouseAbs(float x, float y)
 void PortableMouseButton(int state, int button, float dx, float dy)
 {
     MouseButton(state, button);
+}
+
+// Select the menu mouse style (see s_mouseTapMode). The cursor-hidden state is
+// read straight off this flag by the UI draw (ui_main.cpp).
+void PortableSetMouseTapMode(int enable)
+{
+    s_mouseTapMode = (enable != 0);
+}
+
+int PortableGetMouseTapMode(void)
+{
+    return s_mouseTapMode ? 1 : 0;
+}
+
+// Teleport the menu cursor onto a tapped point, given as a normalized screen
+// fraction [0,1]. Forwards to the engine UI on SP; on MP the UI is a separate VM
+// we can't reach from here, so it's a no-op (tap mode falls back to relative drag).
+void PortableSetMenuCursorPos(float fracX, float fracY)
+{
+#ifndef OPENJK_MP
+    UI_MobileSetCursor(fracX, fracY);
+#endif
 }
 
 // Console command from the touch layer (quick commands etc.).

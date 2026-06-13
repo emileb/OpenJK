@@ -158,15 +158,26 @@ void TouchInterface::mouseMove(int action, float x, float y, float mouse_x, floa
     if(y < (2.0 / 16.0))
         return;
 
+    // Tap-to-select: teleport the menu cursor straight onto the tapped point and
+    // tap to click; the engine hides its cursor (the finger replaces it). The
+    // alternative is the relative-drag cursor. x/y are normalized screen fractions;
+    // the engine maps them into its resolution-independent 640x480 UI canvas, so
+    // no device-pixel scaling or pillarbox offset is needed here (unlike TFE).
+    bool tapMode = PortableGetMouseTapMode();
+
     if(action == TOUCHMOUSE_MOVE)
     {
-        MouseMove(mouse_x * mobile_screen_width, mouse_y * mobile_screen_height);
+        if(tapMode)
+            PortableSetMenuCursorPos(x, y);
+        else
+            MouseMove(mouse_x * mobile_screen_width, mouse_y * mobile_screen_height);
     }
     else if(action == TOUCHMOUSE_TAP)
     {
-        if(0)
+        if(tapMode)
         {
-            MouseMoveAbsolute(x * mobile_screen_width, y * mobile_screen_height);
+            // Place the cursor on the tapped item before clicking.
+            PortableSetMenuCursorPos(x, y);
         }
 
         MouseButton(1, BUTTON_PRIMARY);
