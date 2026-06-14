@@ -481,6 +481,34 @@ char *Sys_DefaultHomePath(void)
 {
 	return NULL;
 }
+#elif defined(__ANDROID__)
+char *Sys_DefaultHomePath(void)
+{
+	// On Android all user data (config, save games, screenshots, ...) must live
+	// under the app's user_files folder, exposed via the USER_FILES env var.
+	// Each engine variant gets its own subfolder so JA/JO/JKMP never clash.
+	// The variant is selected by the same compile defines used everywhere else:
+	//   JK2_MODE  -> OpenJO  (Jedi Outcast SP)   -> "jo"
+	//   _JK2EXE   -> OpenJK  (Jedi Academy SP)   -> "ja"
+	//   (neither) -> OpenJK MP (codemp)          -> "jamp"
+	if ( !homePath[0] )
+	{
+		const char *p = getenv( "USER_FILES" );
+		if ( p && p[0] )
+		{
+#if defined(JK2_MODE)
+			const char *gameDir = "jo";
+#elif defined(_JK2EXE)
+			const char *gameDir = "ja";
+#else
+			const char *gameDir = "jamp";
+#endif
+			Com_sprintf( homePath, sizeof( homePath ), "%s%c%s", p, PATH_SEP, gameDir );
+		}
+	}
+
+	return homePath;
+}
 #elif defined(MACOS_X)
 char *Sys_DefaultHomePath(void)
 {
