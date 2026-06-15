@@ -38,6 +38,13 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+// timeGetTime() is a Win32 multimedia-timer API. The OpenAL paths (now also built
+// on Android) use it for millisecond timing; map it to the portable engine timer.
+#define timeGetTime() Sys_Milliseconds()
+// OutputDebugString() is Win32-only; route the OpenAL paths' debug output to the
+// engine console instead.
+#define OutputDebugString(s) Com_DPrintf("%s", (s))
 #endif
 
 qboolean s_shutUp = qfalse;
@@ -254,6 +261,7 @@ void AL_UpdateRawSamples();
 void S_SetLipSyncs();
 
 // EAX Related
+#ifdef USE_OPENAL_EAX
 
 typedef struct ENVTABLE_s {
 	ALuint		ulNumApertures;
@@ -333,6 +341,24 @@ const GUID EAX_NULL_GUID = { 0x00000000, 0x0000, 0x0000, { 0x00, 0x00, 0x00, 0x0
 const GUID EAX_PrimaryFXSlotID = { 0xf317866d, 0x924c, 0x450c, { 0x86, 0x1b, 0xe6, 0xda, 0xa2, 0x5e, 0x7c, 0x20} };
 
 const GUID EAX_REVERB_EFFECT = { 0xcf95c8f, 0xa3cc, 0x4849, { 0xb0, 0xb6, 0x83, 0x2e, 0xcc, 0x18, 0x22, 0xdf} };
+
+#else // !USE_OPENAL_EAX
+
+// No EAX on this platform (e.g. Android/openal-soft). Provide the small amount of
+// state + no-op functions that the shared OpenAL code paths read/call, so those
+// call sites compile and simply do nothing. The EAX-typed blocks themselves are
+// fenced out separately.
+static const ALboolean	s_bEAX = AL_FALSE;
+static const bool		s_bEALFileLoaded = false;
+static bool				s_bInWater = false;
+static int				s_EnvironmentID = 0;
+
+static void InitEAXManager() {}
+static void ReleaseEAXManager() {}
+static void EALFileInit( const char * /*level*/ ) {}
+static void UpdateEAXBuffer( channel_t * /*ch*/ ) {}
+
+#endif /* USE_OPENAL_EAX */
 
 /**************************************************************************************************\
 *
@@ -492,7 +518,11 @@ void S_Init( void ) {
 	{
 		int i, j;
 
+#ifdef USE_OPENAL_EAX
 		ALCdevice *ALCDevice = alcOpenDevice((ALubyte*)"DirectSound3D");
+#else
+		ALCdevice *ALCDevice = alcOpenDevice(NULL); // default output device (openal-soft)
+#endif
 		if (!ALCDevice)
 			return;
 
@@ -548,6 +578,7 @@ void S_Init( void ) {
 			// Sources / Channels are not sending to any Slots (other than the Listener / Primary FX Slot)
 			s_channels[i].lSlotID = -1;
 
+#ifdef USE_OPENAL_EAX
 			if (s_bEAX)
 			{
 				// Remove the RoomAuto flag from each Source (to remove Reverb Engine Statistical
@@ -560,6 +591,7 @@ void S_Init( void ) {
 				s_eaxSet(&EAXPROPERTYID_EAX40_Source, EAXSOURCE_FLAGS,
 							s_channels[i].alSource, &ulFlags, sizeof(ulFlags));
 			}
+#endif // USE_OPENAL_EAX
 
 			s_numChannels++;
 		}
@@ -918,11 +950,13 @@ void S_BeginRegistration( void )
 	{
 		const char *mapname = Cvar_VariableString( "mapname" );
 		EALFileInit(mapname);
+#ifdef USE_OPENAL_EAX
 		// clear carry crap from previous map
 		for (int i = 0; i < EAX_MAX_FXSLOTS; i++)
 		{
 			s_FXSlotInfo[i].lEnvID = -1;
 		}
+#endif
 	}
 #endif
 
@@ -942,7 +976,7 @@ void S_BeginRegistration( void )
 	}
 }
 
-#ifdef USE_OPENAL
+#ifdef USE_OPENAL_EAX
 void EALFileInit(const char *level)
 {
 	// If an EAL File is already unloaded, remove it
@@ -2502,7 +2536,7 @@ Change the volumes of all the playing sounds for changes in their positions
 */
 void S_Respatialize( int entityNum, const vec3_t head, matrix3_t axis, int inwater )
 {
-#ifdef USE_OPENAL
+#ifdef USE_OPENAL_EAX
 	EAXOCCLUSIONPROPERTIES eaxOCProp;
 	EAXACTIVEFXSLOTS eaxActiveSlots;
 #endif
@@ -2530,6 +2564,7 @@ void S_Respatialize( int entityNum, const vec3_t head, matrix3_t axis, int inwat
 		listener_ori[5] = -axis[2][1];
 		alListenerfv(AL_ORIENTATION, listener_ori);
 
+#ifdef USE_OPENAL_EAX
 		// Update EAX effects here
 		if (s_bEALFileLoaded)
 		{
@@ -2601,6 +2636,7 @@ void S_Respatialize( int entityNum, const vec3_t head, matrix3_t axis, int inwat
 				}
 			}
 		}
+#endif // USE_OPENAL_EAX
 	}
 	else
 	{
@@ -3620,12 +3656,10 @@ void S_SetLipSyncs()
 	int currentTime, timePlayed;
 	channel_t *ch;
 
-#ifdef _WIN32
+	// timeGetTime() maps to the portable Sys_Milliseconds() on non-Windows (see top
+	// of file). It must use the same clock that set ch->iStartTime, or lip-sync
+	// timing (timePlayed below) is wrong - which desyncs talking in cutscenes.
 	currentTime = timeGetTime();
-#else
-	// FIXME: alternative to timeGetTime ?
-	currentTime = 0;
-#endif
 
 	memset(s_entityWavVol, 0, sizeof(s_entityWavVol));
 
@@ -5299,7 +5333,7 @@ qboolean SND_RegisterAudio_LevelLoadEnd(qboolean bDeleteEverythingNotUsedThisLev
 	return bAtLeastOneSoundDropped;
 }
 
-#ifdef USE_OPENAL
+#ifdef USE_OPENAL_EAX
 /****************************************************************************************************\
 *
 *	EAX Related
@@ -6343,4 +6377,4 @@ float CalcDistance(EMPOINT A, EMPOINT B)
 {
 	return (float)sqrt(sqr(A.fX - B.fX)+sqr(A.fY - B.fY) + sqr(A.fZ - B.fZ));
 }
-#endif
+#endif // USE_OPENAL_EAX (whole EAX/EAL backend)

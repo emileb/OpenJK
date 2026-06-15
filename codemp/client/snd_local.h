@@ -30,20 +30,22 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #if defined(_MSC_VER) && !defined(WIN64)
 #define USE_OPENAL
+#define USE_OPENAL_EAX		// EAX 4.0 (Creative, Windows-only) environmental reverb
+#elif defined(__ANDROID__)
+#define USE_OPENAL			// positional audio via openal-soft; no EAX on Android
 #endif
 
 // Open AL Specific
 #ifdef USE_OPENAL
+#ifdef USE_OPENAL_EAX
 #include "OpenAL/al.h"
 #include "OpenAL/alc.h"
 #include "eax/eax.h"
 #include "eax/EaxMan.h"
-/*#elif defined MACOS_X
-#include <OpenAL/al.h>
-#include <OpenAL/alc.h>
 #else
 #include <AL/al.h>
-#include <AL/alc.h>*/
+#include <AL/alc.h>
+#endif
 #endif
 // Added for Open AL to know when to mute all sounds (e.g when app. loses focus)
 void S_AL_MuteAllSounds(qboolean bMute);
