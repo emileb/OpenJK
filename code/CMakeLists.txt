@@ -409,6 +409,12 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 		set_source_files_properties(
 			"${PROG_SOURCE_DIR}/mobile/touch_interface_openjk.cpp"
 			PROPERTIES COMPILE_DEFINITIONS "ENGINE_NAME=\"openjk\"")
+
+		# Enables the guarded PortableSetMouseTapMode() call in the shared
+		# Clibs_OpenTouch touch_interface_base.cpp (this engine implements it).
+		set_source_files_properties(
+			"${CLIBS_DIR}/touch_interface_base.cpp"
+			PROPERTIES COMPILE_DEFINITIONS "GAME_HAS_MOUSE_TAP_MODE")
 	endif()
 
     # Transparently use our bundled minizip.

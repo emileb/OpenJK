@@ -607,6 +607,10 @@ if(BuildMPEngine)
 		set_source_files_properties(
 			"${PROG_SOURCE_DIR}/mobile/touch_interface_openjk.cpp"
 			PROPERTIES COMPILE_DEFINITIONS "ENGINE_NAME=\"openjkmp\"")
+
+		# NOTE: GAME_HAS_MOUSE_TAP_MODE is deliberately NOT defined for MP. MP's UI is a
+		# separate VM we can't teleport into / hide the cursor of, so s_mouseTapMode is
+		# forced off (see mobile/game_interface.cpp) and must ignore the app toggle.
 	endif()
 
 	if(MakeApplicationBundles)
