@@ -224,14 +224,6 @@ void TouchInterface::createControls(std::string filesPath)
     b->setAllowPassThrough(false);
     tcMenuMain->addControl(b);
 
-        b = new touchcontrols::Button("up_arrow", touchcontrols::RectF(0, 5, 2, 7), "arrow_up", PORT_ACT_MENU_UP);
-        b->setAllowPassThrough(false);
-        tcMenuMain->addControl(b);
-
-        b = new touchcontrols::Button("down_arrow", touchcontrols::RectF(0, 8, 2, 10), "arrow_down", PORT_ACT_MENU_DOWN);
-        b->setAllowPassThrough(false);
-        tcMenuMain->addControl(b);
-
 #if 0
     touchcontrols::Mouse *brightnessSlide = new touchcontrols::Mouse("slide_mouse", touchcontrols::RectF(24, 3, 26, 11), "brightness_slider");
     brightnessSlide->signal_action.connect(sigc::mem_fun(this, &TouchInterface:: brightnessSlideMouse));

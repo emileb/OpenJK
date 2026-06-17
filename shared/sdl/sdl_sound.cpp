@@ -33,6 +33,15 @@ extern dma_t		dma;
 SDL_AudioDeviceID	dev;
 qboolean snd_inited = qfalse;
 
+#ifdef __ANDROID__
+// Set from Java via NativeLib.audioOverride() (see android_jni_inc.cpp). When
+// non-zero these override the audio device sample rate / buffer size so the host
+// app's audio settings can grow the buffer and avoid stuttering (e.g. during the
+// startup cinematic where the SDL software-mixer path can otherwise underrun).
+extern int AUDIO_OVERRIDE_FREQ;
+extern int AUDIO_OVERRIDE_SAMPLES;
+#endif
+
 cvar_t *s_sdlBits;
 cvar_t *s_sdlSpeed;
 cvar_t *s_sdlChannels;
@@ -189,6 +198,13 @@ qboolean SNDDMA_Init(int sampleFrequencyInKHz)
 	desired.freq = SNDDMA_ExpandSampleFrequencyKHzToHz(sampleFrequencyInKHz);
 	desired.format = ((tmp == 16) ? AUDIO_S16SYS : AUDIO_U8);
 
+#ifdef __ANDROID__
+	// Apply the host-app frequency override before the buffer-size default below,
+	// so the auto-picked sample count matches the actual device rate.
+	if (AUDIO_OVERRIDE_FREQ)
+		desired.freq = AUDIO_OVERRIDE_FREQ;
+#endif
+
 	// I dunno if this is the best idea, but I'll give it a try...
 	//  should probably check a cvar for this...
 	if (s_sdlDevSamps->value)
@@ -208,6 +224,14 @@ qboolean SNDDMA_Init(int sampleFrequencyInKHz)
 
 	desired.channels = (int) s_sdlChannels->value;
 	desired.callback = SNDDMA_AudioCallback;
+
+#ifdef __ANDROID__
+	// A larger device buffer keeps the software mixer from underrunning when the
+	// main thread is busy (e.g. decoding the startup cinematic).
+	if (AUDIO_OVERRIDE_SAMPLES)
+		desired.samples = AUDIO_OVERRIDE_SAMPLES;
+	Com_Printf( "Android audio override: freq=%d samples=%d\n", AUDIO_OVERRIDE_FREQ, AUDIO_OVERRIDE_SAMPLES );
+#endif
 
 	dev = SDL_OpenAudioDevice( NULL, 0, &desired, &obtained, 0 );
 	if ( !dev )
