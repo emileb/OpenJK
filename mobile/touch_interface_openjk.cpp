@@ -561,7 +561,8 @@ void TouchInterface::newFrame()
 
 void TouchInterface::newGLContext()
 {
-
+    // OpenJK self-assigns texture names from 2048 up (not glGenTextures); keep touch textures below that to avoid collisions
+    touchcontrols::setTextureNumberStart(100);
 }
 
 // Adds the force-select pop-up toggle on top of the base game-button handling.
