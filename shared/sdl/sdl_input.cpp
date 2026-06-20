@@ -628,7 +628,9 @@ void IN_Init( void *windowData )
 	in_mouse = Cvar_Get( "in_mouse", "1", CVAR_ARCHIVE );
 	in_nograb = Cvar_Get( "in_nograb", "0", CVAR_ARCHIVE_ND );
 
+#ifndef __ANDROID__
 	SDL_StartTextInput( );
+#endif
 
 	mouseAvailable = (qboolean)( in_mouse->value != 0 );
 	if ( in_mouse->integer == 2 ) {
