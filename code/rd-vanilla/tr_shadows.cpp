@@ -382,7 +382,7 @@ void RB_DoShadowTessEnd( vec3_t lightPos )
 		return;
 	}
 
-#if 1 //controlled method - try to keep shadows in range so they don't show through so much -rww
+#ifndef JK2_MODE //controlled method - try to keep shadows in range so they don't show through so much -rww (Only JA)
 	vec3_t	worldxyz;
 	vec3_t	entLight;
 	float	groundDist;
@@ -424,8 +424,14 @@ void RB_DoShadowTessEnd( vec3_t lightPos )
 		VectorCopy( backEnd.currentEntity->lightDir, lightDir );
 
 		// project vertexes away from light direction
-		for ( i = 0 ; i < tess.numVertexes ; i++ ) {
-			VectorMA( tess.xyz[i], -512, lightDir, shadowXyz[i] );
+		for ( i = 0 ; i < tess.numVertexes ; i++ )
+        {
+#ifdef _STENCIL_SHADOW_OPT // store the near (tess) and extruded-far vertices in shadowXyz for indexed drawing
+        memcpy(shadowXyz[i], tess.xyz[i], sizeof(vec3_t));
+		VectorMA( tess.xyz[i], -512, lightDir, shadowXyz[SHADER_MAX_VERTEXES + i] );
+#else
+        VectorMA( tess.xyz[i], -512, lightDir, shadowXyz[i] );
+#endif
 		}
 	}
 #endif
