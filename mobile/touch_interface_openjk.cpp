@@ -8,6 +8,11 @@ extern "C"
 {
 extern int mobile_screen_width;
 extern int mobile_screen_height;
+
+// OpenJK-only engine queries, implemented in this engine's mobile/game_interface.cpp.
+// Kept out of the shared Clibs_OpenTouch/game_interface.h so they don't pollute it.
+void PortableSetMenuCursorPos(float fracX, float fracY);
+bool PortableGetForcePowerKnown(int forceAction);
 }
 
 #include "touch_interface.h"
