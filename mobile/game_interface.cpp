@@ -37,6 +37,11 @@
 // semantics of a real main()).
 extern int main_android(int argc, char *argv[]);
 
+// Per-frame duration in ms, set in CL_CreateNewCommands() just before
+// CL_CreateCmd()/CL_AndroidMove() run, clamped to [1, 200]. Used to make the
+// held-joystick look framerate-independent. (cl_input.cpp, this build's client.)
+extern unsigned frame_msec;
+
 // SDL's internal keyboard injection (same approach iortcw / TFE use): pushes a
 // key event into SDL's queue under SDL's lock. OpenJK reads it through the normal
 // SDL_KEYDOWN/UP path in sdl_input.cpp, so remappable binds keep working.
@@ -52,12 +57,11 @@ extern "C" void UI_MobileSetCursor(float fracX, float fracY);
 // them to the pixel units MouseMove() forwards to SDL_InjectMouse().
 static const float ANDROID_LOOK_MOUSE_X_SCALE = 1000.0f;
 static const float ANDROID_LOOK_MOUSE_Y_SCALE =  800.0f;
-// Joystick-look would normally be applied every frame while the stick is held;
-// without a per-frame look hook we emit on each stick-move event instead, so
-// joystick-look mode turns only while the stick is moving (mouse-look mode, the
-// default, behaves correctly). Kept small to match the per-frame magnitude.
-static const float ANDROID_LOOK_JOY_X_SCALE   =   12.0f;
-static const float ANDROID_LOOK_JOY_Y_SCALE   =    8.0f;
+// Joystick-look is applied every frame while the stick is held (in CL_AndroidMove),
+// then normalised to a 60Hz reference via frame_msec so it's framerate-independent.
+// Kept small to match a single 60Hz frame's magnitude.
+static const float ANDROID_LOOK_JOY_X_SCALE   =   20.0f;
+static const float ANDROID_LOOK_JOY_Y_SCALE   =    15.0f;
 
 // --- Cross-thread plumbing, drained on the engine thread in CL_AndroidMove() ---
 
@@ -137,10 +141,14 @@ void CL_AndroidMove( usercmd_t *cmd )
 
 	// Drain the look accumulators through MouseMove() so they reach the view angles
 	// via the normal SDL mouse-motion path (sdl_input.cpp -> CL_MouseMove).
+	// Joystick look is a held magnitude emitted every frame, so normalise it to the
+	// 60Hz reference the JOY scales were tuned for (frame_msec is clamped, so a hitch
+	// can't fling the view). Mouse-swipe look is an accumulated real delta, un-scaled.
+	const float joyScale = (float)frame_msec / 16.6667f;
 	const float yawPx   = s_lookYawMouse   * ANDROID_LOOK_MOUSE_X_SCALE * 5
-	                    + s_lookYawJoy     * ANDROID_LOOK_JOY_X_SCALE;
+	                    + s_lookYawJoy     * ANDROID_LOOK_JOY_X_SCALE * joyScale;
 	const float pitchPx = s_lookPitchMouse * ANDROID_LOOK_MOUSE_Y_SCALE * 5
-	                    + s_lookPitchJoy   * ANDROID_LOOK_JOY_Y_SCALE;
+	                    + -s_lookPitchJoy   * ANDROID_LOOK_JOY_Y_SCALE * joyScale;
 
 	if ( yawPx != 0.0f || pitchPx != 0.0f )
 		MouseMove( yawPx, pitchPx );
