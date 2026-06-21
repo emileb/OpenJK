@@ -34,6 +34,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #ifdef __ANDROID__
 #include <android/log.h>
+#include "LogWritter.h"
 #endif
 
 static char binaryPath[ MAX_OSPATH ] = { 0 };
@@ -151,6 +152,8 @@ void Sys_Print( const char *msg ) {
 	// already a fully-formatted string, so pass it through "%s" rather than as a
 	// format string to avoid mis-parsing any '%' it contains.
 	__android_log_print( ANDROID_LOG_INFO, "OpenJK", "%s", msg );
+	// Also persist console output to the on-disk log for later inspection.
+	LogWritter_Write( msg );
 #endif
 }
 
