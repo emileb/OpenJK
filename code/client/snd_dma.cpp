@@ -613,6 +613,11 @@ void S_Init( void ) {
 			}
 		}
 
+		// Channel 0 streams the background music; make it listener-relative so it
+		// isn't distance-attenuated to silence (spatialise loops all skip channel 0).
+		alSourcei(s_channels[0].alSource, AL_SOURCE_RELATIVE, AL_TRUE);
+		alSource3f(s_channels[0].alSource, AL_POSITION, 0.0f, 0.0f, 0.0f);
+
 		// clear out the lip synching override array
 		memset(s_entityWavVol, 0, sizeof(s_entityWavVol));
 
@@ -3558,23 +3563,12 @@ void AL_UpdateRawSamples()
 		alGetSourcei(s_channels[0].alSource, AL_SOURCE_STATE, &state);
 		if (state != AL_PLAYING)
 		{
-			// Stopped playing ... due to buffer underrun
-			// Unqueue any buffers still on the Source (they will be PROCESSED), and restart playback
-			alGetSourcei(s_channels[0].alSource, AL_BUFFERS_PROCESSED, &processed);
-			while (processed)
-			{
-				alSourceUnqueueBuffers(s_channels[0].alSource, 1, &buffer);
-				processed--;
-				alGetBufferi(buffer, AL_SIZE, &size);
-				alDeleteBuffers(1, &buffer);
-
-				// Update sg.soundtime (+= number of samples played (number of bytes / 4))
-				s_soundtime += (size >> 2);
-			}
-
-#ifdef _DEBUG
-			OutputDebugString("Restarting / Starting playback of Raw Samples\n");
-#endif
+			// Underrun: the buffers queued just above are sitting on a non-playing source.
+			// Do NOT unqueue them here — on a STOPPED/INITIAL source OpenAL reports every
+			// queued buffer as "processed", so unqueueing would delete the fresh data before
+			// it plays, leaving nothing queued (playback never resumes and soundtime races).
+			// Just (re)start playback; genuinely-played buffers are reclaimed at the top of
+			// the next frame, when the source is actually PLAYING and the count is accurate.
 			alSourcePlay(s_channels[0].alSource);
 		}
 	}
