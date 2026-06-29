@@ -60,8 +60,8 @@ static const float ANDROID_LOOK_MOUSE_Y_SCALE =  800.0f;
 // Joystick-look is applied every frame while the stick is held (in CL_AndroidMove),
 // then normalised to a 60Hz reference via frame_msec so it's framerate-independent.
 // Kept small to match a single 60Hz frame's magnitude.
-static const float ANDROID_LOOK_JOY_X_SCALE   =   20.0f;
-static const float ANDROID_LOOK_JOY_Y_SCALE   =    15.0f;
+static const float ANDROID_LOOK_JOY_X_SCALE   =   40.0f;
+static const float ANDROID_LOOK_JOY_Y_SCALE   =    30.0f;
 
 // --- Cross-thread plumbing, drained on the engine thread in CL_AndroidMove() ---
 
