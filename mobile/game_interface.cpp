@@ -188,6 +188,17 @@ int PortableKeyEvent(int state, int code, int unitcode)
 // injected as SDL keys instead so the UI behaves like a real keyboard/mouse.
 void PortableAction(int state, int action)
 {
+    // Generic user-bindable buttons: inject a fixed scancode the player can bind
+    // in-game. 0-9 -> keypad 1-0, 10-25 -> A-P.
+    if (action >= PORT_ACT_CUSTOM_0 && action <= PORT_ACT_CUSTOM_25)
+    {
+        if (action <= PORT_ACT_CUSTOM_9)
+            sendKey(state, (SDL_Scancode)(SDL_SCANCODE_KP_1 + action - PORT_ACT_CUSTOM_0));
+        else
+            sendKey(state, (SDL_Scancode)(SDL_SCANCODE_A + action - PORT_ACT_CUSTOM_10));
+        return;
+    }
+
     if (portableInMenu())
     {
         switch (action)
