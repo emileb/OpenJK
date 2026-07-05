@@ -8,6 +8,9 @@ extern "C"
 {
 extern int mobile_screen_width;
 extern int mobile_screen_height;
+extern int game_screen_width;    // Framebuffer (render) size, may be smaller than the screen
+extern int game_screen_height;
+extern int game_maintain_aspect; // Framebuffer is letterboxed to keep the game aspect
 
 // OpenJK-only engine queries, implemented in this engine's mobile/game_interface.cpp.
 // Kept out of the shared Clibs_OpenTouch/game_interface.h so they don't pollute it.
@@ -157,6 +160,30 @@ void TouchInterface::openGLEnd()
     setClientState(GL_COLOR_ARRAY, s_savedGL.colorArray);
 };
 
+// With maintain-aspect on, the game renders into a letterboxed framebuffer that
+// only covers a centred sub-rectangle of the screen, but the touch x/y are full-
+// screen fractions. Remap them into the game-content rectangle so the tapped point
+// lines up with the menu (matches the letterbox geometry in Framebuffer.cpp).
+static void mapTapToGameContent(float &x, float &y)
+{
+    if(!game_maintain_aspect || game_screen_width <= 0 || game_screen_height <= 0)
+        return;
+
+    float realRatio = (float) mobile_screen_width / (float) mobile_screen_height;
+    float fbRatio   = (float) game_screen_width / (float) game_screen_height;
+
+    if(fbRatio < realRatio) // pillarbox: black bars left/right
+    {
+        float contentW = fbRatio / realRatio;
+        x = (x - (1.0f - contentW) * 0.5f) / contentW;
+    }
+    else if(fbRatio > realRatio) // letterbox: black bars top/bottom
+    {
+        float contentH = realRatio / fbRatio;
+        y = (y - (1.0f - contentH) * 0.5f) / contentH;
+    }
+}
+
 void TouchInterface::mouseMove(int action, float x, float y, float mouse_x, float mouse_y)
 {
     // Ignore the top where the buttons are
@@ -166,9 +193,11 @@ void TouchInterface::mouseMove(int action, float x, float y, float mouse_x, floa
     // Tap-to-select: teleport the menu cursor straight onto the tapped point and
     // tap to click; the engine hides its cursor (the finger replaces it). The
     // alternative is the relative-drag cursor. x/y are normalized screen fractions;
-    // the engine maps them into its resolution-independent 640x480 UI canvas, so
-    // no device-pixel scaling or pillarbox offset is needed here (unlike TFE).
+    // the engine maps them into its resolution-independent 640x480 UI canvas. When
+    // the game is letterboxed (maintain-aspect framebuffer) we first fold the tap
+    // into the centred game rectangle so it isn't offset by the black bars.
     bool tapMode = PortableGetMouseTapMode();
+    mapTapToGameContent(x, y);
 
     if(action == TOUCHMOUSE_MOVE)
     {
