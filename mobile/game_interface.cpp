@@ -121,6 +121,10 @@ static void sendKey( int state, SDL_Scancode scancode )
 	SDL_SendKeyboardKey( state ? SDL_PRESSED : SDL_RELEASED, scancode );
 }
 
+// PORT_ACT_CROUCH is a toggle rather than a hold: each press flips crouch on/off,
+// so the release event (state == 0) is ignored.
+static bool s_crouchToggled = false;
+
 // Called every frame from CL_CreateCmd (engine thread). Drains queued commands
 // and folds the analog touch movement into the outgoing usercmd.
 void CL_AndroidMove( usercmd_t *cmd )
@@ -242,8 +246,14 @@ void PortableAction(int state, int action)
         case PORT_ACT_FORCE_USE:   buttonCommand(state, "useforce");   break;
         case PORT_ACT_JUMP:
         case PORT_ACT_UP:          buttonCommand(state, "moveup");     break;
+        case PORT_ACT_DOWN:
         case PORT_ACT_CROUCH:
-        case PORT_ACT_DOWN:        buttonCommand(state, "movedown");   break;
+            if (state) // toggle only on press; ignore the release
+            {
+                s_crouchToggled = !s_crouchToggled;
+                buttonCommand(s_crouchToggled, "movedown");
+            }
+            break;
 
         // --- One-shot commands (issued on press) ---
         case PORT_ACT_NEXT_WEP:    if (state) postCommand("weapnext");        break;
